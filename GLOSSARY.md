@@ -42,11 +42,18 @@ One trip memory per friend that the lyrics are built around.
 The whole song for one trip: an intro, one verse per friend separated by hooks, and a final chorus.
 _Avoid_: Tape, track, cassette
 
+**Lyrics**:
+The words of the Ode: a verse per friend, a hook and a chorus. Written from the ledger, never sung with amounts, brand names or song titles.
+_Avoid_: Script, text
+
 **Verse**:
 One friend's four lines in the Ode.
 
 **Line**:
 One of a friend's four sung lines; each stands for 25% of that friend's amount owed.
+
+**Flagged**:
+A lyric line that still fails the checks after one regeneration. It stays in the lyrics preview, marked, for the payer to edit.
 
 **Hook**:
 The short refrain between verses; always audible.

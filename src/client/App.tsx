@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import { LyricsPreview } from "./LyricsPreview.tsx";
+import { failureMessage, Warnings } from "./messages.tsx";
 
 interface LedgerRow {
   friend: string;
@@ -16,23 +18,6 @@ interface Ledger {
 type Load = { status: "loading" } | { status: "error" } | { status: "ready"; ledger: Ledger };
 
 const dollars = (cents: number | null) => (cents === null ? "" : (cents / 100).toFixed(2));
-
-async function failureMessage(res: Response): Promise<string> {
-  const body: unknown = await res.json().catch(() => undefined);
-  const error = typeof body === "object" && body !== null ? Reflect.get(body, "error") : undefined;
-  return typeof error === "string" ? error : "Something went wrong. Try again.";
-}
-
-function Warnings({ messages }: { messages: string[] }) {
-  if (messages.length === 0) return null;
-  return (
-    <ul style={{ color: "#8a4b00", margin: "0.25rem 0 0", paddingLeft: "1.25rem" }}>
-      {messages.map((message) => (
-        <li key={message}>{message}</li>
-      ))}
-    </ul>
-  );
-}
 
 function Row({ row, onChange }: { row: LedgerRow; onChange: (row: LedgerRow) => void }) {
   const [amount, setAmount] = useState(dollars(row.amountOwedCents));
@@ -115,7 +100,7 @@ export function App() {
   }, []);
 
   async function submitNotes() {
-    if (load.status === "ready" && load.ledger.rows.length > 0 && !window.confirm("Building a new ledger replaces the current one, including your edits. Continue?")) {
+    if (load.status === "ready" && load.ledger.rows.length > 0 && !window.confirm("Building a new ledger replaces the current one, including your edits and the lyrics. Continue?")) {
       return;
     }
     setBuilding(true);
@@ -187,6 +172,8 @@ export function App() {
               </ul>
             </section>
           )}
+
+          {load.ledger.rows.length > 0 && <LyricsPreview key={version} />}
         </>
       )}
     </main>

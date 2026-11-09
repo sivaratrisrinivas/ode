@@ -22,7 +22,7 @@ export interface StoredLedger extends Ledger {
 export interface LedgerStore {
   /** The saved ledger; empty when no notes have been turned into a ledger yet. */
   read(): Promise<StoredLedger>;
-  /** Replace the whole ledger atomically. */
+  /** Replace the whole ledger atomically. Lyrics written from the old ledger are deleted with it. */
   replace(ledger: StoredLedger): Promise<void>;
   /** Write the given fields to one friend's row; undefined when no such friend is on the ledger. */
   updateRow(
@@ -85,7 +85,7 @@ export type ProposeLedgerError = ClaudeUnavailable | MalformedExtraction | TooMa
 /**
  * Turn trip notes into a ledger and save it in place of the current one.
  * Claude extracts; the even split of group costs is deterministic code.
- * Nothing is saved when this fails.
+ * Lyrics written from the old ledger are deleted. Nothing is saved when this fails.
  *
  * @param deps - Claude and the ledger store.
  * @param notes - The payer's parsed trip notes.

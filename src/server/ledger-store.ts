@@ -42,12 +42,13 @@ export function createLedgerStore(sql: Sql): LedgerStore {
 
     async replace(ledger) {
       await sql.transaction(async (tx) => {
-        await tx.query(
-          `insert into ledger (id, notes, warnings) values (1, $1, $2::jsonb)
-           on conflict (id) do update set notes = excluded.notes, warnings = excluded.warnings`,
-          [ledger.notes, JSON.stringify(ledger.warnings)],
-        );
+        // Delete, then insert, so rows that reference the old ledger (the lyrics) cascade away.
         await tx.query("delete from ledger_friends");
+        await tx.query("delete from ledger");
+        await tx.query("insert into ledger (id, notes, warnings) values (1, $1, $2::jsonb)", [
+          ledger.notes,
+          JSON.stringify(ledger.warnings),
+        ]);
         for (const [position, row] of ledger.rows.entries()) {
           await tx.query(
             `insert into ledger_friends (friend, position, amount_owed_cents, amount_status, inside_joke)

@@ -1,9 +1,9 @@
-import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { ClaudeUnavailable, type Claude } from "../src/server/ports.ts";
 import { err } from "../src/server/result.ts";
 import { fakeClaude } from "../src/testing/fakes.ts";
 import { createHarness } from "./harness.ts";
+import { seedExtraction, seedNotes } from "./seed.ts";
 
 interface RowBody {
   friend: string;
@@ -28,35 +28,6 @@ async function json<T>(res: Response): Promise<T> {
 function extractedFriend(name: string, amountOwedCents: number | null, extra: object = {}) {
   return { name, amountOwedCents, amountIsEstimate: false, insideJoke: `${name}'s trip memory`, ...extra };
 }
-
-const seedNotes = readFileSync(new URL("../seed/notes.txt", import.meta.url), "utf8");
-
-// What Claude returns for the seed notes: each friend's amount before group costs
-// (Tharun: his $420 stay split 4 ways = $105; Vikram: ~$90 of gas; Sahiti: $60 airboat + ~$25 burritos)
-// and the $30 parking the payer covered for the group.
-const seedExtraction = {
-  friends: [
-    {
-      name: "Tharun",
-      amountOwedCents: 10500,
-      amountIsEstimate: true,
-      insideJoke: "Drove the overnight stretch to Key West while everyone slept",
-    },
-    {
-      name: "Vikram",
-      amountOwedCents: 9000,
-      amountIsEstimate: true,
-      insideJoke: "Got everyone lost hunting the sunset spot and found a pier and key lime pie at 9pm",
-    },
-    {
-      name: "Sahiti",
-      amountOwedCents: 8500,
-      amountIsEstimate: true,
-      insideJoke: "Screamed when the alligator came close to the boat",
-    },
-  ],
-  groupCosts: [{ description: "Parking in Orlando", amountCents: 3000 }],
-};
 
 describe("trip notes become a ledger", () => {
   it("gives the seed notes Tharun $97.50, Vikram $82.50 and Sahiti $77.50, each with an inside joke", async () => {

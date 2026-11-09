@@ -40,6 +40,17 @@ export function fakeClaude(canned: Record<string, unknown> = {}): Claude {
   };
 }
 
+/** Canned structured output, keyed by task; each handler sees the request's input text. */
+export function fakeClaudeByTask(handlers: Record<string, (input: string) => unknown>): Claude {
+  return {
+    async structured({ task, input }) {
+      const handler = handlers[task];
+      if (handler === undefined) throw new Error(`fake Claude has no handler for task ${task}`);
+      return ok(handler(input));
+    },
+  };
+}
+
 export function fakeMusic(chunk: ComposedChunk = { audio: new Uint8Array(), words: [] }): ElevenMusic {
   return { compose: async () => chunk };
 }
