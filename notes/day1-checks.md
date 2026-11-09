@@ -23,7 +23,7 @@ Run 2026-11-08. Each item: result, then the decision it drives.
 
 ## Eleven Music v2.5
 
-Probe: `~/hackathons/paypal-ai/probes/line-chunk-plan.json`. Intro 6 s, 4 verse lines × 5 s, hook 9 s, so 35 s were planned.
+Probe: `docs/plan/probes/line-chunk-plan.json`. Intro 6 s, 4 verse lines × 5 s, hook 9 s, so 35 s were planned.
 
 | Check | Result |
 |---|---|
@@ -31,11 +31,11 @@ Probe: `~/hackathons/paypal-ai/probes/line-chunk-plan.json`. Intro 6 s, 4 verse 
 | Per-chunk boundaries land where planned | ✅ sounds right by ear; not measured |
 | `with_timestamps` returns word timings | ✅ via `POST /v1/music/detailed` (multipart: JSON + MP3), `words_timestamps[]` with `start_ms`/`end_ms` |
 | Names sung clearly ("Arjun") | ✅ clear, by ear |
-| Voice-changer pass on isolated vocals | Probed (`voice-changed-*.mp3`, 35.13 s); not part of the current scope |
+| Voice-changer pass on isolated vocals | Probed (`voice-changed-*.mp3`, 35.13 s); used only for the Seeded Ode (ADR 0002) |
 
 | Musical quality | ⚠️ "okay, not great": doesn't sound like a song you'd play daily (composition and lyrics) |
 
-### Probe 2: verse-level chunks (`probes/verse-chunk-plan.json`)
+### Probe 2: verse-level chunks (`docs/plan/probes/verse-chunk-plan.json`)
 Intro 6 s, one 20 s verse chunk, 12 s chorus; indie-folk stomp-clap styles; same lyrics. Generated in 5.6 s, 38.03 s long.
 
 | Check | Result |
@@ -45,4 +45,4 @@ Intro 6 s, one 20 s verse chunk, 12 s chorus; indie-folk stomp-clap styles; same
 | `waveform_visual` | returned `null`; draw the waveform client-side |
 | Musical quality vs probe 1 | ✅ "now it sounds like a real song" (by ear) |
 
-**Decision:** one chunk per verse (~20 s). Verse windows come from chunk durations, and `words_timestamps` confirms them (and can drive karaoke-style lyric un-blurring).
+**Decision:** one chunk per verse (~20 s), ADR 0001. Verse windows come from chunk durations, and `words_timestamps` confirms them (and can drive karaoke-style lyric un-blurring).

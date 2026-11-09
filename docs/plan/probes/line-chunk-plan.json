@@ -1,0 +1,21 @@
+{
+  "model_id": "music_v2_5",
+  "with_timestamps": true,
+  "composition_plan": {
+    "chunks": [
+      {"text": "[Intro]", "duration_ms": 6000,
+       "positive_styles": ["warm acoustic pop", "nostalgic summer road trip", "male lead vocals", "96 BPM", "acoustic guitar", "light brushed drums", "instrumental intro"],
+       "negative_styles": ["metal", "screaming", "autotune"]},
+      {"text": "[Verse 1]\nArjun took the night shift on the Florida road", "duration_ms": 5000,
+       "positive_styles": ["clear male vocals", "acoustic guitar", "intimate"], "negative_styles": [], "context_adherence": "high"},
+      {"text": "Coffee in the cupholder, radio down low", "duration_ms": 5000,
+       "positive_styles": ["clear male vocals", "acoustic guitar"], "negative_styles": [], "context_adherence": "high"},
+      {"text": "He booked us the Airbnb when the rest of us forgot", "duration_ms": 5000,
+       "positive_styles": ["clear male vocals", "acoustic guitar"], "negative_styles": [], "context_adherence": "high"},
+      {"text": "Arjun, this line is yours, I'm finally coming back", "duration_ms": 5000,
+       "positive_styles": ["clear male vocals", "building"], "negative_styles": [], "context_adherence": "high"},
+      {"text": "[Hook]\nFlorida twenty-five, sand still in the car\nWe were young and broke but never far", "duration_ms": 9000,
+       "positive_styles": ["catchy hook", "group harmonies", "full band"], "negative_styles": [], "context_adherence": "high"}
+    ]
+  }
+}

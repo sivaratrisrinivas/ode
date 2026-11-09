@@ -1,0 +1,334 @@
+{
+ "composition_plan": {
+  "chunks": [
+   {
+    "text": "[Intro]",
+    "duration_ms": 6000,
+    "positive_styles": [
+     "2020s indie folk",
+     "stomp-clap acoustic anthem",
+     "warm nostalgic summer road trip",
+     "male lead vocals",
+     "G major",
+     "100 BPM",
+     "fingerpicked acoustic guitar",
+     "kick drum stomps",
+     "handclaps",
+     "instrumental intro"
+    ],
+    "negative_styles": [
+     "metal",
+     "screaming",
+     "autotune",
+     "EDM",
+     "lo-fi hiss"
+    ],
+    "context_adherence": "high",
+    "conditioning_ref": null,
+    "condition_strength": null
+   },
+   {
+    "text": "[Verse 1]\nArjun took the night shift on the Florida road\nCoffee in the cupholder, radio down low\nHe booked us the Airbnb when the rest of us forgot\nArjun, this line is yours, I'm finally coming back",
+    "duration_ms": 20000,
+    "positive_styles": [
+     "intimate verse",
+     "clear male vocals",
+     "storytelling delivery",
+     "fingerpicked acoustic guitar",
+     "soft stomps",
+     "builds toward the chorus"
+    ],
+    "negative_styles": [
+     "rushed phrasing",
+     "spoken word"
+    ],
+    "context_adherence": "high",
+    "conditioning_ref": null,
+    "condition_strength": null
+   },
+   {
+    "text": "[Chorus]\nFlorida twenty-five, sand still in the car\nWe were young and broke but never far",
+    "duration_ms": 12000,
+    "positive_styles": [
+     "big sing-along chorus",
+     "group gang vocals",
+     "full band",
+     "strummed acoustic",
+     "stomp-clap",
+     "anthemic lift"
+    ],
+    "negative_styles": [
+     "thin mix"
+    ],
+    "context_adherence": "high",
+    "conditioning_ref": null,
+    "condition_strength": null
+   }
+  ]
+ },
+ "song_metadata": {
+  "title": null,
+  "description": null,
+  "genres": [],
+  "languages": [],
+  "is_explicit": null
+ },
+ "words_timestamps": [
+  {
+   "word": "Arjun",
+   "start_ms": 7300,
+   "end_ms": 7680
+  },
+  {
+   "word": "took",
+   "start_ms": 7800,
+   "end_ms": 8039
+  },
+  {
+   "word": "the",
+   "start_ms": 8080,
+   "end_ms": 8180
+  },
+  {
+   "word": "night",
+   "start_ms": 8260,
+   "end_ms": 8480
+  },
+  {
+   "word": "shift",
+   "start_ms": 8560,
+   "end_ms": 9000
+  },
+  {
+   "word": "on",
+   "start_ms": 9100,
+   "end_ms": 9280
+  },
+  {
+   "word": "the",
+   "start_ms": 9320,
+   "end_ms": 9400
+  },
+  {
+   "word": "Florida",
+   "start_ms": 9540,
+   "end_ms": 10440
+  },
+  {
+   "word": "road",
+   "start_ms": 10540,
+   "end_ms": 10900
+  },
+  {
+   "word": "Coffee",
+   "start_ms": 11980,
+   "end_ms": 12580
+  },
+  {
+   "word": "in",
+   "start_ms": 12680,
+   "end_ms": 12860
+  },
+  {
+   "word": "the",
+   "start_ms": 12900,
+   "end_ms": 13000
+  },
+  {
+   "word": "cupholder,",
+   "start_ms": 13060,
+   "end_ms": 14000
+  },
+  {
+   "word": "radio",
+   "start_ms": 14420,
+   "end_ms": 15060
+  },
+  {
+   "word": "down",
+   "start_ms": 15160,
+   "end_ms": 15520
+  },
+  {
+   "word": "low",
+   "start_ms": 15600,
+   "end_ms": 15820
+  },
+  {
+   "word": "He",
+   "start_ms": 16960,
+   "end_ms": 17060
+  },
+  {
+   "word": "booked",
+   "start_ms": 17100,
+   "end_ms": 17400
+  },
+  {
+   "word": "us",
+   "start_ms": 17500,
+   "end_ms": 17660
+  },
+  {
+   "word": "the",
+   "start_ms": 17720,
+   "end_ms": 17840
+  },
+  {
+   "word": "Airbnb",
+   "start_ms": 17940,
+   "end_ms": 18860
+  },
+  {
+   "word": "when",
+   "start_ms": 18900,
+   "end_ms": 19020
+  },
+  {
+   "word": "the",
+   "start_ms": 19060,
+   "end_ms": 19160
+  },
+  {
+   "word": "rest",
+   "start_ms": 19220,
+   "end_ms": 19480
+  },
+  {
+   "word": "of",
+   "start_ms": 19560,
+   "end_ms": 19660
+  },
+  {
+   "word": "us",
+   "start_ms": 19720,
+   "end_ms": 19860
+  },
+  {
+   "word": "forgot",
+   "start_ms": 19960,
+   "end_ms": 20500
+  },
+  {
+   "word": "Arjun,",
+   "start_ms": 21940,
+   "end_ms": 22440
+  },
+  {
+   "word": "this",
+   "start_ms": 22520,
+   "end_ms": 22720
+  },
+  {
+   "word": "line",
+   "start_ms": 22800,
+   "end_ms": 23080
+  },
+  {
+   "word": "is",
+   "start_ms": 23140,
+   "end_ms": 23240
+  },
+  {
+   "word": "yours,",
+   "start_ms": 23300,
+   "end_ms": 23560
+  },
+  {
+   "word": "I'm",
+   "start_ms": 23660,
+   "end_ms": 23840
+  },
+  {
+   "word": "finally",
+   "start_ms": 24000,
+   "end_ms": 24400
+  },
+  {
+   "word": "coming",
+   "start_ms": 24460,
+   "end_ms": 25120
+  },
+  {
+   "word": "back",
+   "start_ms": 25200,
+   "end_ms": 25640
+  },
+  {
+   "word": "Florida",
+   "start_ms": 26940,
+   "end_ms": 27420
+  },
+  {
+   "word": "twenty-five,",
+   "start_ms": 27540,
+   "end_ms": 28460
+  },
+  {
+   "word": "sand",
+   "start_ms": 28760,
+   "end_ms": 29000
+  },
+  {
+   "word": "still",
+   "start_ms": 29060,
+   "end_ms": 29380
+  },
+  {
+   "word": "in",
+   "start_ms": 29500,
+   "end_ms": 29660
+  },
+  {
+   "word": "the",
+   "start_ms": 29700,
+   "end_ms": 29780
+  },
+  {
+   "word": "car",
+   "start_ms": 29840,
+   "end_ms": 30180
+  },
+  {
+   "word": "We",
+   "start_ms": 31820,
+   "end_ms": 32020
+  },
+  {
+   "word": "were",
+   "start_ms": 32080,
+   "end_ms": 32320
+  },
+  {
+   "word": "young",
+   "start_ms": 32420,
+   "end_ms": 32980
+  },
+  {
+   "word": "and",
+   "start_ms": 33080,
+   "end_ms": 33360
+  },
+  {
+   "word": "broke",
+   "start_ms": 33440,
+   "end_ms": 33780
+  },
+  {
+   "word": "but",
+   "start_ms": 33880,
+   "end_ms": 34120
+  },
+  {
+   "word": "never",
+   "start_ms": 34180,
+   "end_ms": 34580
+  },
+  {
+   "word": "far",
+   "start_ms": 34640,
+   "end_ms": 35040
+  }
+ ],
+ "waveform_visual": null
+}

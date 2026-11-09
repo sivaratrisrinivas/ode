@@ -1,0 +1,17 @@
+{
+  "model_id": "music_v2_5",
+  "with_timestamps": true,
+  "composition_plan": {
+    "chunks": [
+      {"text": "[Intro]", "duration_ms": 6000,
+       "positive_styles": ["2020s indie folk", "stomp-clap acoustic anthem", "warm nostalgic summer road trip", "male lead vocals", "G major", "100 BPM", "fingerpicked acoustic guitar", "kick drum stomps", "handclaps", "instrumental intro"],
+       "negative_styles": ["metal", "screaming", "autotune", "EDM", "lo-fi hiss"]},
+      {"text": "[Verse 1]\nArjun took the night shift on the Florida road\nCoffee in the cupholder, radio down low\nHe booked us the Airbnb when the rest of us forgot\nArjun, this line is yours, I'm finally coming back", "duration_ms": 20000,
+       "positive_styles": ["intimate verse", "clear male vocals", "storytelling delivery", "fingerpicked acoustic guitar", "soft stomps", "builds toward the chorus"],
+       "negative_styles": ["rushed phrasing", "spoken word"], "context_adherence": "high"},
+      {"text": "[Chorus]\nFlorida twenty-five, sand still in the car\nWe were young and broke but never far", "duration_ms": 12000,
+       "positive_styles": ["big sing-along chorus", "group gang vocals", "full band", "strummed acoustic", "stomp-clap", "anthemic lift"],
+       "negative_styles": ["thin mix"], "context_adherence": "high"}
+    ]
+  }
+}
