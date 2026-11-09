@@ -1,8 +1,8 @@
 # Build plan: Ode
 
-Re-baselined **Mon Nov 9, 16:30 IST** after the second grilling session. Vocabulary: `GLOSSARY.md`. Decisions: `docs/adr/`. Each block is a GitHub issue under the `wayfinder:map` issue; the issue is the source of truth for its done-when.
+Re-baselined **Mon Nov 9** after the second grilling session; build work re-sliced vertically from spec #20. Vocabulary: `GLOSSARY.md`. Decisions: `docs/adr/`. Each row below is a GitHub issue under map #1; the issue's acceptance criteria are the source of truth.
 
-**Budget:** scope is ~37 h of build plus ~14 h of packaging (51 h). At ~14 h/day that's ~46 h until the submit time, so Wed and Thu run long, or the Nov 11 safety check cuts. Each estimate is also that block's time limit.
+**Budget:** ~41 h of build plus ~14 h of packaging (55 h). At ~14 h/day that's ~46 h until the submit time, so ~9 h over: expect long Wed and Thu days, and the safety check cutting #31 and #32 (5 h) if behind. Each estimate is also that ticket's time limit.
 
 **Key times:**
 - **Safety check:** Wed Nov 11, 10:00 IST.
@@ -10,11 +10,11 @@ Re-baselined **Mon Nov 9, 16:30 IST** after the second grilling session. Vocabul
 - **Submit by:** Thu Nov 12, 18:00 IST. The hard deadline is Nov 13, 01:30 IST, and nothing can be edited after it.
 
 **Rules:**
-- Deploy first (S1). At the end of every block, the app can be demoed as it stands.
+- Deploy first (#21). At the end of every block, the app can be demoed as it stands.
 - After 30 minutes stuck on one bug, cut the feature or switch to its fallback.
 - Hard-code the payer.
-- Never cut: partial payments, line unlock, the live split screen, the AI ledger.
-- Cut order if behind: (1) release date (S9), (2) verse share (S7 share half).
+- Never cut: #22 (ledger), #26 and #27 (payments and line unlock), #28 and #29 (live friend view, split screen).
+- Cut order if behind: (1) #31 release date, (2) #32 verse share.
 
 **Stack:**
 - TypeScript web service on Render (Node + Vite/React), paid Render Postgres; audio stored as `bytea`.
@@ -31,50 +31,52 @@ Re-baselined **Mon Nov 9, 16:30 IST** after the second grilling session. Vocabul
 - Names are sung clearly.
 - Split 7.9 s, voice conversion 6.8 s; the singing survives.
 
-## Mon Nov 9 (from 16:30)
-| Est. | Block | Done when |
+## Mon Nov 9
+| Est. | Ticket | Done when |
 |---|---|---|
-| 1 | **S1** Public repo MIT license in About, TS skeleton, Render web service + paid Postgres | The hosted URL reads a row from Postgres |
-| 1 | **S0r** One full 3-verse Ode (latency, credits via `/v1/user/subscription` before and after); `PAYMENT.CAPTURE.COMPLETED` webhook to the public URL | `notes/day1-checks.md` records seconds, credits and webhook yes/no |
-| 3 | **S2** Trip notes → ledger + inside jokes; payer-covered group costs split evenly | The seed notes give 3 rows (friend, amount owed, inside joke); edits persist |
-| 2 | **S3** Lyrics | 3×4 lines + hook + chorus; no amounts, no brand names, no song titles; every line passes the length and blocklist checks |
-| — | **23:00 IST: read the tests** (H1/H2, H3), or Nov 10 23:00 if sent today | Results recorded in `context.md` |
+| 1.5 | **#21** Walking skeleton: deployed app, API test harness and fakes | The hosted URL reads a row from Postgres; one API test passes against the fakes |
+| 1 | **#4** Measure one full Ode; test the capture webhook | `notes/day1-checks.md` records seconds, credits and webhook yes/no |
+| 3 | **#22** Trip notes become a ledger | The seed notes give $97.50, $82.50, $77.50 with an inside joke each; edits persist |
+| 2 | **#23** The ledger becomes lyrics | 3×4 lines + hook + chorus pass the length and blocklist checks |
+| — | **23:00 IST: read the tests (#2)**, or Nov 10 23:00 if sent today | Results recorded in `context.md` |
 
 ## Tue Nov 10
-| Est. | Block | Done when |
+| Est. | Ticket | Done when |
 |---|---|---|
-| 2.5 | **S4a** Composition-plan builder (one chunk per verse) → compose → store audio, verse windows, line windows | An Ode plays from the hosted URL; every line has a window (timestamp-aligned or equal-quarter fallback) |
-| 1.5 | **S4c** Run S4a as a Render Workflow; poll its status | "Make the Ode" → status steps → ready |
-| 1.5 | **Packaging start:** Devpost draft, README skeleton + diagram | Draft exists; diagram in the README |
-| 5 | **S5** Cassette player: Web Audio, per-line lock (muffle + blur), unlock animation | A dev control locks/unlocks any line; an unlock is obvious in a YouTube-compressed screen recording |
-| 4 | **S6** PayPal: payee per friend, JS SDK, capture → lines (25% steps, in order), gross amounts capped at amount owed, idempotent on capture ID, webhook confirms | Paying $50 of Tharun's $97.50 unlocks exactly 2 lines; money shows in his sandbox account |
+| 3 | **#24** Make the Ode and play it | An Ode plays from the hosted URL; every line has a window |
+| 1.5 | **#25** Move the song pipeline into a Render Workflow | "Make the Ode" runs as a Workflow task with status steps |
+| 1.5 | **Packaging start (#19):** Devpost draft, README skeleton + diagram | Draft exists; diagram in the README |
+| 5 | **#26** Pay a friend and lines unlock | Paying $50 of Tharun's $97.50 unlocks exactly 2 lines; the fake money shows in his sandbox account |
+| 2.5 | **#27** Payments unlock once, confirmed by webhook, with the unlock moment | Duplicates unlock nothing; an unlock is obvious after YouTube compression |
 
 ## Wed Nov 11
-| Est. | Block | Done when |
+| Est. | Ticket | Done when |
 |---|---|---|
-| 1 | **S10** Live split screen (SSE) | A payment on the left unlocks the line on the right within ~1 s |
-| **10:00** | **Safety check.** Cut in the order above if behind | — |
-| 1 | **S8** Chorus drop | The last payment drops the chorus |
-| 4 | **S7** Friend view + verse share + OG card | Tharun's link shows only his amounts; a verse share holds only unlocked lines (chorus only once dropped); the card previews in a chat app |
-| 1 | **S9** Release date (fixed once set) + countdown + delayed | The countdown reads correctly; a past date shows delayed and the chorus stays locked |
-| 2 | **S11** Judge mode: per-visitor copy of the Seeded Ode; judge Odes with 1–3 friends; 5 new Odes a day, then the Seeded Ode | A fresh browser gets an unpaid copy; the 6th new Ode of the day falls back |
-| 2 | **S12** Seed the real trip notes; 10 clip runs; 1 full run; record a labeled fallback | Failure rate and credits logged; fallback saved |
-| 1 | **S4b** Seeded Ode voice script: split → clone → remix | The Seeded Ode plays in the payer's voice |
+| 3 | **#28** Friend view with live updates | A payment unlocks the line in the friend view within ~1 s; no other friend's amounts |
+| 1 | **#29** Split screen | Payer left, friend view right, live |
+| **10:00** | **Safety check.** Cut #31, then #32, if behind | — |
+| 1 | **#30** The chorus drops on the last payment | The last full repayment drops the chorus |
+| 1 | **#31** Release date, countdown and delayed | A past date shows delayed; the chorus stays locked |
+| 4 | **#32** Verse share with the link-preview card | Only unlocked lines; chorus only once dropped; the card previews in a chat app |
+| 2 | **#33** Seeded Ode with a copy per visitor | Two browsers get independent unpaid copies; "Reset demo" works |
+| 1.5 | **#34** Judge-made Odes | The 6th new Ode of the day falls back to the Seeded Ode |
+| 2 | **#16** Seed the real data; reliability runs | Failure rate and credits logged; fallback saved |
+| 1 | **#35** Seeded Ode in the payer's voice | The Seeded Ode plays in the payer's voice, labeled |
 | — | **FEATURE FREEZE** | — |
-| 5 | **S13** Design: cassette page first, then home, ledger, friend view, verse share card | All screens look finished at desktop and phone widths |
+| 5 | **#18** Visual design pass (may run into Thu morning) | All screens look finished at desktop and phone widths |
 
-## Thu Nov 12 (start early)
+## Thu Nov 12 (start early) — #19
 | Est. | Block | Done when |
 |---|---|---|
 | 1.5 | Full README (install, env vars, **sandbox test-buyer login**, diagram) + screenshots | A fresh clone runs from the README alone |
 | 1 | Write-up (`packaging.md`) | Every Devpost field is drafted |
-| 5 | Video: 3+ takes, ≤2:30, burned-in captions, no brand names | Under 3:00; the story works with sound off |
+| 5 | Video: 3+ takes, ≤2:30, burned-in captions, no brand names; label the Seeded Ode "in my voice" | Under 3:00; the story works with sound off |
 | 3 | **Detail pass**: titles, favicon, typos, console errors, links, loading/empty states, no trademarks | Checklist clean |
 | 1 | Upload the video publicly; submit | Submitted by **18:00 IST** |
 | After | Post on X; confirm Render services stay up through **Dec 15** | — |
 
 ## ElevenLabs credits (Starter: 40k a month, ~37k left, resets Dec 1)
-- Judge and in-app Odes are compose-only (no split or conversion), so they cost less than the old 4–5k estimate. S0r measures the real number.
+- Judge and in-app Odes are compose-only (no split or conversion), so they cost less than the old 4–5k estimate. #4 measures the real number.
 - The split and conversion run once, for the Seeded Ode (plus retakes).
-- **Upgrade to Creator** if S0r measures more than 5k credits per Ode, or if usage passes 20k before Wed.
+- **Upgrade to Creator** if #4 measures more than 5k credits per Ode, or if usage passes 20k before Wed.
 - Judge mode caps new Odes at 5 a day; the Dec 1 reset refills credits as judging starts.
