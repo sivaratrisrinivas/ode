@@ -4,6 +4,7 @@ import { Hono } from "hono";
 import pg from "pg";
 import { createApi } from "./app.ts";
 import { createAnthropicClaude } from "./claude.ts";
+import { createElevenMusic } from "./eleven-music.ts";
 import type { Sql } from "./ports.ts";
 import { migrate } from "./schema.ts";
 import { unwiredClaude, unwiredMusic, unwiredPayPal } from "./unwired.ts";
@@ -35,12 +36,15 @@ await migrate(sql);
 const anthropicApiKey = process.env["ANTHROPIC_API_KEY"];
 if (!anthropicApiKey) console.warn("ANTHROPIC_API_KEY is not set; turning trip notes into a ledger will fail.");
 
+const elevenLabsApiKey = process.env["ELEVENLABS_API_KEY"];
+if (!elevenLabsApiKey) console.warn("ELEVENLABS_API_KEY is not set; making the Ode will fail.");
+
 const api = createApi({
   sql,
   ports: {
     clock: { now: () => new Date() },
     claude: anthropicApiKey ? createAnthropicClaude(anthropicApiKey) : unwiredClaude,
-    music: unwiredMusic,
+    music: elevenLabsApiKey ? createElevenMusic({ apiKey: elevenLabsApiKey }) : unwiredMusic,
     paypal: unwiredPayPal,
   },
 });

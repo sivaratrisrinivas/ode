@@ -18,3 +18,5 @@ services:
           property: connectionString
       - key: ANTHROPIC_API_KEY
         sync: false
+      - key: ELEVENLABS_API_KEY
+        sync: false

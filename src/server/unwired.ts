@@ -1,4 +1,4 @@
-import { ClaudeUnavailable, type Claude, type ElevenMusic, type PayPal } from "./ports.ts";
+import { ClaudeUnavailable, MusicUnavailable, type Claude, type ElevenMusic, type PayPal } from "./ports.ts";
 import { err } from "./result.ts";
 
 function unwired(service: string) {
@@ -13,7 +13,10 @@ export const unwiredClaude: Claude = {
   structured: async () => err(new ClaudeUnavailable("ANTHROPIC_API_KEY is not set")),
 };
 
-export const unwiredMusic: ElevenMusic = { compose: unwired("Eleven Music") };
+/** Stands in for Eleven Music when no API key is configured: every call reports it unavailable. */
+export const unwiredMusic: ElevenMusic = {
+  compose: async () => err(new MusicUnavailable("ELEVENLABS_API_KEY is not set")),
+};
 
 export const unwiredPayPal: PayPal = {
   createOrder: unwired("PayPal"),

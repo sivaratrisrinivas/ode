@@ -1,0 +1,456 @@
+import { describe, expect, it } from "vitest";
+import { ClaudeUnavailable, type ElevenMusic } from "../src/server/ports.ts";
+import { err, ok, type Result } from "../src/server/result.ts";
+import { fakeClaudeByTask, fakeMusic } from "../src/testing/fakes.ts";
+import { createHarness, pollUntil } from "./harness.ts";
+import { seedExtraction, seedLyrics, seedNotes } from "./seed.ts";
+
+interface TimedLineBody {
+  text: string;
+  startMs: number;
+  endMs: number;
+}
+type SectionBody =
+  | { kind: "intro"; startMs: number; endMs: number }
+  | { kind: "verse"; friend: string; startMs: number; endMs: number; lines: TimedLineBody[] }
+  | { kind: "hook" | "chorus"; text: string; startMs: number; endMs: number };
+type OdeBody =
+  | { status: "none" }
+  | { status: "making"; steps: { name: string; state: string }[] }
+  | { status: "failed"; error: string }
+  | { status: "ready"; durationMs: number; audioUrl: string; sections: SectionBody[] };
+
+// Response.json() is untyped, so assigning it to a declared type needs no cast.
+async function json<T>(res: Response): Promise<T> {
+  return res.json();
+}
+
+/** The Ode status once the run has settled: ready or failed (or never started). */
+function settledOde(get: (path: string) => Response | Promise<Response>): Promise<OdeBody> {
+  return pollUntil(
+    async () => json<OdeBody>(await get("/api/ode")),
+    (ode) => ode.status !== "making",
+  );
+}
+
+function expectReady(ode: OdeBody) {
+  if (ode.status !== "ready") throw new Error(`expected a ready Ode, got ${JSON.stringify(ode)}`);
+  return ode;
+}
+
+/** The label a section is listed under: "verse:Tharun", "hook", ... */
+function label(section: SectionBody): string {
+  return section.kind === "verse" ? `verse:${section.friend}` : section.kind;
+}
+
+function verses(ode: { sections: SectionBody[] }) {
+  return ode.sections.flatMap((section) => (section.kind === "verse" ? [section] : []));
+}
+
+/** A verse's line windows as [start, end] offsets from the start of the verse. */
+function relativeWindows(verse: { startMs: number; lines: TimedLineBody[] }) {
+  return verse.lines.map((line) => [line.startMs - verse.startMs, line.endMs - verse.startMs]);
+}
+
+// The fake singer starts the four lines 1.0 s, 4.5 s, 9.5 s and 13.0 s into a verse and takes 2.5 s over
+// each. A window ends halfway through the silence before the next line starts, so the windows tile the
+// 20 s verse but are not equal quarters.
+const sungWindows = [
+  [0, 4_000],
+  [4_000, 8_250],
+  [8_250, 12_500],
+  [12_500, 20_000],
+];
+
+const quarters = [
+  [0, 5_000],
+  [5_000, 10_000],
+  [10_000, 15_000],
+  [15_000, 20_000],
+];
+
+/** The seed ledger with its lyrics written, ready for "Make the Ode". */
+async function lyricsHarness(music?: ElevenMusic) {
+  const harness = await createHarness({
+    claude: fakeClaudeByTask({ "extract-ledger": () => seedExtraction, "write-lyrics": () => seedLyrics }),
+    ...(music === undefined ? {} : { music }),
+  });
+  await harness.post("/api/ledger", { notes: seedNotes });
+  await harness.post("/api/lyrics", {});
+  return harness;
+}
+
+describe("making the Ode", () => {
+  it("composes an intro, one verse per friend each followed by a hook, and a chorus, back to back", async () => {
+    const { post, get } = await lyricsHarness();
+
+    const started = await post("/api/ode", {});
+    const ode = expectReady(await settledOde(get));
+
+    expect(started.status).toBe(202);
+    expect(ode.sections.map(label)).toEqual([
+      "intro",
+      "verse:Tharun",
+      "hook",
+      "verse:Vikram",
+      "hook",
+      "verse:Sahiti",
+      "hook",
+      "chorus",
+    ]);
+    expect(ode.sections[0]?.startMs).toBe(0);
+    ode.sections.forEach((section, i) => {
+      expect(section.endMs).toBeGreaterThan(section.startMs);
+      expect(section.startMs).toBe(ode.sections[i - 1]?.endMs ?? 0);
+    });
+    expect(ode.durationMs).toBe(ode.sections.at(-1)?.endMs);
+    // One chunk per verse (ADR 0001): each verse window is one ~20 s chunk.
+    for (const section of ode.sections.filter((s) => s.kind === "verse")) {
+      expect(section.endMs - section.startMs).toBe(20_000);
+    }
+    const hooks = ode.sections.flatMap((s) => (s.kind === "hook" ? [s.text] : []));
+    expect(hooks).toEqual([seedLyrics.hook, seedLyrics.hook, seedLyrics.hook]);
+    expect(ode.sections.at(-1)).toMatchObject({ kind: "chorus", text: seedLyrics.chorus });
+  });
+
+  it("stores a time window for every line, found from when the words are sung", async () => {
+    const { post, get } = await lyricsHarness();
+
+    await post("/api/ode", {});
+    const ode = expectReady(await settledOde(get));
+
+    expect(verses(ode).map((v) => [v.friend, v.lines.map((l) => l.text)])).toEqual(
+      seedLyrics.friends.map((f) => [f.name, f.lines]),
+    );
+    expect(verses(ode).map(relativeWindows)).toEqual([sungWindows, sungWindows, sungWindows]);
+  });
+
+  it("still finds the windows when one sung word in each line is not the written word", async () => {
+    const { post, get } = await lyricsHarness(fakeMusic({ singing: "one-word-misheard" }));
+
+    await post("/api/ode", {});
+    const ode = expectReady(await settledOde(get));
+
+    expect(verses(ode).map(relativeWindows)).toEqual([sungWindows, sungWindows, sungWindows]);
+  });
+
+  it.each([
+    ["words that are not the lyrics", "wrong-words"],
+    ["missing", "silent"],
+    ["the lines sung in a different order", "scrambled"],
+  ] as const)("splits each verse window into equal quarters when the timestamps are %s", async (_case, singing) => {
+    const { post, get } = await lyricsHarness(fakeMusic({ singing }));
+
+    await post("/api/ode", {});
+    const ode = expectReady(await settledOde(get));
+
+    expect(ode.sections.map(label)).toHaveLength(8);
+    expect(verses(ode).map(relativeWindows)).toEqual([quarters, quarters, quarters]);
+  });
+
+  it("falls back verse by verse: only the verse whose words do not line up is split into quarters", async () => {
+    const music = fakeMusic({ singing: (verse) => (verse === 2 ? "wrong-words" : "faithful") });
+    const { post, get } = await lyricsHarness(music);
+
+    await post("/api/ode", {});
+    const ode = expectReady(await settledOde(get));
+
+    expect(verses(ode).map(relativeWindows)).toEqual([sungWindows, quarters, sungWindows]);
+  });
+
+  it("leaves no Ode when composing fails, says so, and makes the Ode when the payer retries", async () => {
+    const music = fakeMusic();
+    const { post, get } = await lyricsHarness(music);
+    music.failNextCompose();
+
+    const started = await post("/api/ode", {});
+    const failed = await settledOde(get);
+
+    expect(started.status).toBe(202);
+    expect(failed).toEqual({ status: "failed", error: expect.stringContaining("Try again") });
+    expect(await json<OdeBody>(await get("/api/ode"))).toEqual(failed);
+
+    const retried = await post("/api/ode", {});
+    const ode = expectReady(await settledOde(get));
+
+    expect(retried.status).toBe(202);
+    expect(ode.sections).toHaveLength(8);
+  });
+
+  it("fails the same way, and stays retryable, when something unexpected goes wrong while composing", async () => {
+    let broken = true;
+    const inner = fakeMusic();
+    const music: ElevenMusic = {
+      compose: async (chunks) => {
+        if (broken) throw new Error("adapter bug");
+        return inner.compose(chunks);
+      },
+    };
+    const { post, get } = await lyricsHarness(music);
+
+    await post("/api/ode", {});
+    const failed = await settledOde(get);
+
+    expect(failed).toEqual({ status: "failed", error: expect.stringContaining("Try again") });
+
+    broken = false;
+    await post("/api/ode", {});
+    expect((await settledOde(get)).status).toBe("ready");
+  });
+
+  describe("while the Ode is being made", () => {
+    /** A music port that holds the song back until `release()`, and counts the songs asked for. */
+    function heldMusic() {
+      let release = () => {};
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const inner = fakeMusic();
+      let asked = 0;
+      const music: ElevenMusic = {
+        compose: async (chunks) => {
+          asked += 1;
+          await gate;
+          return inner.compose(chunks);
+        },
+      };
+      return { music, release, asked: () => asked };
+    }
+
+    const steps = (writing: string, composing: string, finding: string) => [
+      { name: "writing", state: writing },
+      { name: "composing", state: composing },
+      { name: "finding-lines", state: finding },
+    ];
+
+    it("shows the status steps: writing, composing, finding every line", async () => {
+      const { music, release } = heldMusic();
+      const { post, get } = await lyricsHarness(music);
+
+      const started = await json<OdeBody>(await post("/api/ode", {}));
+      const composing = await pollUntil(
+        async () => json<OdeBody>(await get("/api/ode")),
+        (ode) => ode.status !== "making" || ode.steps.some((step) => step.name === "composing" && step.state === "active"),
+      );
+
+      expect(started).toEqual({ status: "making", steps: steps("active", "waiting", "waiting") });
+      expect(composing).toEqual({ status: "making", steps: steps("done", "active", "waiting") });
+      release();
+      expect((await settledOde(get)).status).toBe("ready");
+    });
+
+    it("does not start a second run, or spend a second song, when asked again", async () => {
+      const { music, release, asked } = heldMusic();
+      const { post, get } = await lyricsHarness(music);
+
+      await post("/api/ode", {});
+      const again = await post("/api/ode", {});
+
+      expect(again.status).toBe(202);
+      expect((await json<OdeBody>(again)).status).toBe("making");
+      release();
+      expect((await settledOde(get)).status).toBe("ready");
+      expect(asked()).toBe(1);
+    });
+
+    it("saves no Ode for friends who left the ledger when new trip notes replace it mid-run", async () => {
+      const { music, release } = heldMusic();
+      let extraction: unknown = seedExtraction;
+      const { post, get } = await createHarness({
+        claude: fakeClaudeByTask({ "extract-ledger": () => extraction, "write-lyrics": () => seedLyrics }),
+        music,
+      });
+      await post("/api/ledger", { notes: seedNotes });
+      await post("/api/lyrics", {});
+      await post("/api/ode", {});
+      await pollUntil(
+        async () => json<OdeBody>(await get("/api/ode")),
+        (ode) => ode.status === "making" && ode.steps.some((step) => step.name === "composing" && step.state === "active"),
+      );
+
+      extraction = {
+        friends: [{ name: "Maya", amountOwedCents: 5_000, amountIsEstimate: false, insideJoke: "Missed the ferry" }],
+        groupCosts: [],
+      };
+      expect((await post("/api/ledger", { notes: "Maya covered the ferry, $50." })).status).toBe(200);
+      release();
+      const settled = await settledOde(get);
+
+      expect(settled.status).toBe("failed");
+      expect((await get("/api/ode/audio")).status).toBe(404);
+    });
+  });
+
+  it("writes the lyrics first, as its first step, when none have been written", async () => {
+    const harness = await createHarness({
+      claude: fakeClaudeByTask({ "extract-ledger": () => seedExtraction, "write-lyrics": () => seedLyrics }),
+    });
+    await harness.post("/api/ledger", { notes: seedNotes });
+
+    await harness.post("/api/ode", {});
+    const ode = expectReady(await settledOde(harness.get));
+
+    expect(verses(ode).map((v) => [v.friend, v.lines.map((l) => l.text)])).toEqual(
+      seedLyrics.friends.map((f) => [f.name, f.lines]),
+    );
+    const lyrics = await json<{ verses: unknown[] }>(await harness.get("/api/lyrics"));
+    expect(lyrics.verses).toHaveLength(3);
+  });
+
+  it("composes the lyrics as the payer edited them", async () => {
+    const { post, patch, get } = await lyricsHarness();
+    await patch("/api/lyrics/verses/Vikram/lines/3", { text: "Key lime pie at nine, the best of the trip" });
+    await patch("/api/lyrics/hook", { text: "Oh we were there, always there" });
+
+    await post("/api/ode", {});
+    const ode = expectReady(await settledOde(get));
+
+    expect(verses(ode)[1]?.lines[2]?.text).toBe("Key lime pie at nine, the best of the trip");
+    expect(ode.sections.filter((s) => s.kind === "hook").map((s) => s.kind === "hook" && s.text)).toEqual([
+      "Oh we were there, always there",
+      "Oh we were there, always there",
+      "Oh we were there, always there",
+    ]);
+    // The edited line is still found where it is sung: its words were given to the singer.
+    expect(verses(ode).map(relativeWindows)).toEqual([sungWindows, sungWindows, sungWindows]);
+  });
+
+  it("asks the payer to build the ledger first, and starts nothing, when it is empty or not ready", async () => {
+    const empty = await createHarness();
+    const noLedger = await empty.post("/api/ode", {});
+    expect(noLedger.status).toBe(422);
+    expect((await json<{ error: string }>(noLedger)).error).toContain("Build the ledger first");
+    expect(await json<OdeBody>(await empty.get("/api/ode"))).toEqual({ status: "none" });
+
+    const claude = fakeClaudeByTask({
+      "extract-ledger": () => ({
+        friends: [{ name: "Vikram", amountOwedCents: null, amountIsEstimate: false, insideJoke: "The pier at nine" }],
+        groupCosts: [],
+      }),
+    });
+    const unfinished = await createHarness({ claude });
+    await unfinished.post("/api/ledger", { notes: "vikram" });
+    const missingAmount = await unfinished.post("/api/ode", {});
+    expect(missingAmount.status).toBe(422);
+    expect((await json<{ error: string }>(missingAmount)).error).toContain("No amount found for Vikram");
+    expect(await json<OdeBody>(await unfinished.get("/api/ode"))).toEqual({ status: "none" });
+  });
+
+  it("asks the payer to try again when Claude cannot write the lyrics, and makes the Ode on retry", async () => {
+    let writing: Result<unknown, ClaudeUnavailable> = err(new ClaudeUnavailable("rate limited"));
+    const ledgerReader = fakeClaudeByTask({ "extract-ledger": () => seedExtraction });
+    const harness = await createHarness({
+      claude: { structured: async (request) => (request.task === "write-lyrics" ? writing : ledgerReader.structured(request)) },
+    });
+    await harness.post("/api/ledger", { notes: seedNotes });
+
+    await harness.post("/api/ode", {});
+    const failed = await settledOde(harness.get);
+
+    expect(failed).toEqual({ status: "failed", error: expect.stringContaining("lyrics") });
+    expect(await json<{ verses: unknown[] }>(await harness.get("/api/lyrics"))).toEqual({ verses: [], hook: null, chorus: null });
+
+    writing = ok(seedLyrics);
+    await harness.post("/api/ode", {});
+    expect((await settledOde(harness.get)).status).toBe("ready");
+  });
+
+  it("refuses to make a second Ode over the first", async () => {
+    const { post, get } = await lyricsHarness();
+    await post("/api/ode", {});
+    const first = expectReady(await settledOde(get));
+
+    const again = await post("/api/ode", {});
+
+    expect(again.status).toBe(409);
+    expect((await json<{ error: string }>(again)).error).toContain("already made");
+    expect(await json<OdeBody>(await get("/api/ode"))).toEqual(first);
+  });
+
+  it("drops the Ode, and its audio, when new trip notes replace the ledger", async () => {
+    const { post, get } = await lyricsHarness();
+    await post("/api/ode", {});
+    expectReady(await settledOde(get));
+
+    await post("/api/ledger", { notes: seedNotes });
+
+    expect(await json<OdeBody>(await get("/api/ode"))).toEqual({ status: "none" });
+    expect((await get("/api/ode/audio")).status).toBe(404);
+  });
+
+  describe("playing the Ode", () => {
+    async function madeOde() {
+      const harness = await lyricsHarness();
+      await harness.post("/api/ode", {});
+      const ode = expectReady(await settledOde(harness.get));
+      return { ...harness, ode };
+    }
+    // The fake Eleven Music returns 256 bytes: 0, 1, 2 ... 255.
+    const bytes = (from: number, to: number) => Array.from({ length: to - from + 1 }, (_, i) => from + i);
+
+    it("serves the composed audio from the address the status gives", async () => {
+      const { get, ode } = await madeOde();
+
+      const res = await get(ode.audioUrl);
+
+      expect(res.status).toBe(200);
+      expect(res.headers.get("content-type")).toBe("audio/mpeg");
+      expect(res.headers.get("accept-ranges")).toBe("bytes");
+      expect([...new Uint8Array(await res.arrayBuffer())]).toEqual(bytes(0, 255));
+    });
+
+    it("serves a byte range, so a browser can seek", async () => {
+      const { request, ode } = await madeOde();
+
+      const slice = await request(ode.audioUrl, { headers: { range: "bytes=10-19" } });
+      const tail = await request(ode.audioUrl, { headers: { range: "bytes=250-" } });
+      const last = await request(ode.audioUrl, { headers: { range: "bytes=-4" } });
+
+      expect(slice.status).toBe(206);
+      expect(slice.headers.get("content-range")).toBe("bytes 10-19/256");
+      expect([...new Uint8Array(await slice.arrayBuffer())]).toEqual(bytes(10, 19));
+      expect(tail.headers.get("content-range")).toBe("bytes 250-255/256");
+      expect([...new Uint8Array(await tail.arrayBuffer())]).toEqual(bytes(250, 255));
+      expect([...new Uint8Array(await last.arrayBuffer())]).toEqual(bytes(252, 255));
+    });
+
+    it.each(["bytes=abc", "bytes=-", "bytes=9-5", "bytes=0-1,5-6", "items=0-9"])(
+      "serves the whole audio for the Range header %s, which it does not serve",
+      async (range) => {
+        const { request, ode } = await madeOde();
+
+        const res = await request(ode.audioUrl, { headers: { range } });
+
+        expect(res.status).toBe(200);
+        expect([...new Uint8Array(await res.arrayBuffer())]).toEqual(bytes(0, 255));
+      },
+    );
+
+    it("refuses a range that asks for the last zero bytes", async () => {
+      const { request, ode } = await madeOde();
+
+      expect((await request(ode.audioUrl, { headers: { range: "bytes=-0" } })).status).toBe(416);
+    });
+
+    it("refuses a range that starts past the end of the audio", async () => {
+      const { request, ode } = await madeOde();
+
+      const res = await request(ode.audioUrl, { headers: { range: "bytes=256-300" } });
+
+      expect(res.status).toBe(416);
+      expect(res.headers.get("content-range")).toBe("bytes */256");
+    });
+
+    it("has no audio before an Ode is made, or after a failed run", async () => {
+      const music = fakeMusic();
+      const { get, post } = await lyricsHarness(music);
+      expect((await get("/api/ode/audio")).status).toBe(404);
+
+      music.failNextCompose();
+      await post("/api/ode", {});
+      await settledOde(get);
+
+      expect((await get("/api/ode/audio")).status).toBe(404);
+    });
+  });
+});

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { LyricsPreview } from "./LyricsPreview.tsx";
+import { OdeStudio } from "./OdeStudio.tsx";
 import { failureMessage, Warnings } from "./messages.tsx";
 
 interface LedgerRow {
@@ -100,7 +100,7 @@ export function App() {
   }, []);
 
   async function submitNotes() {
-    if (load.status === "ready" && load.ledger.rows.length > 0 && !window.confirm("Building a new ledger replaces the current one, including your edits and the lyrics. Continue?")) {
+    if (load.status === "ready" && load.ledger.rows.length > 0 && !window.confirm("Building a new ledger replaces the current one, including your edits, the lyrics and the Ode. Continue?")) {
       return;
     }
     setBuilding(true);
@@ -173,7 +173,7 @@ export function App() {
             </section>
           )}
 
-          {load.ledger.rows.length > 0 && <LyricsPreview key={version} />}
+          {load.ledger.rows.length > 0 && <OdeStudio key={version} />}
         </>
       )}
     </main>

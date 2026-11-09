@@ -41,4 +41,37 @@ export async function migrate(sql: Sql): Promise<void> {
        problems jsonb not null default '[]'
      )`,
   );
+  // The Ode is made from the ledger and its lyrics and cascades away with the ledger, like the lyrics do.
+  // Its sections hold their own text, so editing lyrics later never changes what was sung, and a verse can
+  // only be saved for a friend who is on the ledger.
+  await sql.query(
+    `create table if not exists odes (
+       id integer primary key check (id = 1),
+       ledger_id integer not null default 1 references ledger (id) on delete cascade,
+       audio bytea not null
+     )`,
+  );
+  await sql.query(
+    `create table if not exists ode_sections (
+       position integer primary key,
+       ode_id integer not null default 1 references odes (id) on delete cascade,
+       kind text not null check (kind in ('intro', 'verse', 'hook', 'chorus')),
+       friend text references ledger_friends (friend) on delete cascade,
+       text text,
+       start_ms integer not null,
+       end_ms integer not null check (end_ms > start_ms),
+       check ((kind = 'verse') = (friend is not null)),
+       check ((kind in ('hook', 'chorus')) = (text is not null))
+     )`,
+  );
+  await sql.query(
+    `create table if not exists ode_lines (
+       position integer not null references ode_sections (position) on delete cascade,
+       line_no integer not null check (line_no between 1 and 4),
+       text text not null,
+       start_ms integer not null,
+       end_ms integer not null check (end_ms > start_ms),
+       primary key (position, line_no)
+     )`,
+  );
 }

@@ -3,7 +3,7 @@ import { ClaudeUnavailable } from "../src/server/ports.ts";
 import { err, ok, type Result } from "../src/server/result.ts";
 import { fakeClaudeByTask } from "../src/testing/fakes.ts";
 import { createHarness } from "./harness.ts";
-import { seedExtraction, seedNotes } from "./seed.ts";
+import { seedExtraction, seedLyrics as cleanLyrics, seedNotes } from "./seed.ts";
 
 interface LineBody {
   text: string;
@@ -22,40 +22,6 @@ interface ErrorBody {
 async function json<T>(res: Response): Promise<T> {
   return res.json();
 }
-
-const cleanLyrics = {
-  friends: [
-    {
-      name: "Tharun",
-      lines: [
-        "Tharun held the wheel while the whole car dreamed",
-        "Headlights on the highway in a long quiet stream",
-        "Key West was waiting at the end of the night",
-        "He got us there sleeping and he got it right",
-      ],
-    },
-    {
-      name: "Vikram",
-      lines: [
-        "Vikram swore the sunset was just around the bend",
-        "Wrong turn, wrong turn, and a pier at the end",
-        "Key lime pie at nine under the string lights",
-        "The best night of the trip came from getting lost right",
-      ],
-    },
-    {
-      name: "Sahiti",
-      lines: [
-        "Sahiti on the airboat watching the water glide",
-        "Then a gator slid up close and she screamed with pride",
-        "Everybody heard it across the whole swamp",
-        "And Tharun caught it on video, a legend now",
-      ],
-    },
-  ],
-  hook: "Oh we were there, we were there, together on the road",
-  chorus: "Here is to the friends who carried the whole trip home",
-};
 
 /** The cleanLyrics with some slots changed. Verse lines are numbered from 1. */
 function lyricsWith(changes: { verse?: [friend: "Tharun" | "Vikram" | "Sahiti", line: 1 | 2 | 3 | 4, text: string][]; hook?: string; chorus?: string }) {

@@ -1,3 +1,4 @@
+import type { ChunkPlan, WordTiming } from "./ode.ts";
 import type { Result } from "./result.ts";
 
 /** Runs queries; the same shape for a pool, a transaction and PGlite. */
@@ -39,20 +40,30 @@ export interface Claude {
   }): Promise<Result<unknown, ClaudeUnavailable>>;
 }
 
-export interface WordTiming {
-  text: string;
-  startMs: number;
-  endMs: number;
-}
-
-export interface ComposedChunk {
+/** The finished song: one audio file and when every sung word lands in it. */
+export interface ComposedSong {
   audio: Uint8Array;
+  /** In song order, with times counted from the start of the whole song, not of a chunk. */
   words: WordTiming[];
 }
 
-/** Eleven Music: one chunk per verse (ADR 0001). */
+/** Eleven Music could not compose the song: network, quota, a rejected plan or an unreadable reply. */
+export class MusicUnavailable extends Error {
+  /** Identifies this error in a union. */
+  readonly _tag = "MusicUnavailable" as const;
+
+  /** @param cause - What went wrong: a network error, an HTTP error reply or a parse problem. */
+  constructor(cause: unknown) {
+    super("Eleven Music is unavailable", { cause });
+  }
+}
+
+/**
+ * Eleven Music: the whole song in one call, as consecutive chunks (one per verse, ADR 0001).
+ * The song's chunks run back to back, each for its planned duration.
+ */
 export interface ElevenMusic {
-  compose(request: { lyrics: string; styles: string[]; durationMs: number }): Promise<ComposedChunk>;
+  compose(chunks: readonly ChunkPlan[]): Promise<Result<ComposedSong, MusicUnavailable>>;
 }
 
 export interface PayPalOrder {

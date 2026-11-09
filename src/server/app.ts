@@ -1,9 +1,12 @@
 import { Hono, type Context } from "hono";
+import { parseByteRange } from "./byte-range.ts";
 import { parseRowEdit, rowWarnings, type LedgerRow } from "./ledger.ts";
 import { editLedgerRow, proposeLedger, type ProposeLedgerError, type StoredLedger } from "./ledger-service.ts";
 import { createLedgerStore } from "./ledger-store.ts";
 import { editLyricLine, writeLyrics, type WriteLyricsError } from "./lyrics-service.ts";
 import { createLyricsStore } from "./lyrics-store.ts";
+import { createOdeMaker, ODE_STEPS, type MakeOdeError, type OdeStatus, type OdeStep, type StartOdeError } from "./ode-service.ts";
+import { createOdeStore } from "./ode-store.ts";
 import { parseLineEdit, parseLineNumber, type LineSlot, type LyricLine, type Lyrics, type NoSuchLine } from "./lyrics.ts";
 import type { Ports, Sql } from "./ports.ts";
 import { ok, type Result } from "./result.ts";
@@ -62,6 +65,49 @@ function writeFailure(error: WriteLyricsError): { status: 422 | 502; message: st
   }
 }
 
+/** What the payer is told when a run did not produce an Ode. Nothing was saved in any of these cases. */
+function makeFailureMessage(error: MakeOdeError): string {
+  switch (error._tag) {
+    case "LedgerNotReady":
+      return error.message;
+    case "ClaudeUnavailable":
+    case "MalformedLyrics":
+      return "Couldn't write your lyrics just now. Try again in a moment.";
+    case "MusicUnavailable":
+      return "Couldn't compose your Ode just now. Try again in a moment.";
+    case "OdeRunCrashed":
+      return "Something went wrong making your Ode. Try again in a moment.";
+  }
+}
+
+function startFailure(error: StartOdeError): { status: 409 | 422; message: string } {
+  switch (error._tag) {
+    case "LedgerNotReady":
+      return { status: 422, message: error.message };
+    case "OdeAlreadyMade":
+      return { status: 409, message: error.message };
+  }
+}
+
+/** Every step with where it stands: done, active or waiting. */
+function stepsJson(current: OdeStep) {
+  const at = ODE_STEPS.indexOf(current);
+  return ODE_STEPS.map((name, index) => ({ name, state: index < at ? "done" : index === at ? "active" : "waiting" }));
+}
+
+function odeJson(status: OdeStatus) {
+  switch (status._tag) {
+    case "NotMade":
+      return { status: "none" };
+    case "Making":
+      return { status: "making", steps: stepsJson(status.step) };
+    case "Failed":
+      return { status: "failed", error: makeFailureMessage(status.error) };
+    case "Ready":
+      return { status: "ready", durationMs: status.ode.durationMs, audioUrl: "/api/ode/audio", sections: status.ode.sections };
+  }
+}
+
 /**
  * The HTTP API: the one seam the tests and the browser both use.
  *
@@ -72,6 +118,8 @@ export function createApi({ sql, ports }: { sql: Sql; ports: Ports }): Hono {
   const api = new Hono();
   const store = createLedgerStore(sql);
   const lyricsStore = createLyricsStore(sql);
+  const odeStore = createOdeStore(sql);
+  const odeMaker = createOdeMaker({ claude: ports.claude, music: ports.music, ledger: store, lyrics: lyricsStore, odes: odeStore });
 
   api.get("/api/health", (c) => c.json({ ok: true, now: ports.clock.now().toISOString() }));
 
@@ -129,6 +177,35 @@ export function createApi({ sql, ports }: { sql: Sql; ports: Ports }): Hono {
   });
   api.patch("/api/lyrics/hook", (c) => editLine(c, ok({ _tag: "hook" })));
   api.patch("/api/lyrics/chorus", (c) => editLine(c, ok({ _tag: "chorus" })));
+
+  api.get("/api/ode", async (c) => c.json(odeJson(await odeMaker.status())));
+
+  api.post("/api/ode", async (c) => {
+    const started = await odeMaker.start();
+    if (started._tag === "err") {
+      const { status, message } = startFailure(started.error);
+      return c.json({ error: message }, status);
+    }
+    return c.json(odeJson(started.value), 202);
+  });
+
+  api.get("/api/ode/audio", async (c) => {
+    const audio = await odeStore.readAudio();
+    if (audio === undefined) return c.json({ error: "There is no Ode to play yet." }, 404);
+
+    const headers = { "content-type": "audio/mpeg", "accept-ranges": "bytes" };
+    const range = parseByteRange(c.req.header("range"), audio.byteLength);
+    if (range._tag === "err") return c.body(null, 416, { ...headers, "content-range": `bytes */${audio.byteLength}` });
+    // A copy, because a response body must be backed by a plain ArrayBuffer and the database's bytes may not be.
+    if (range.value === undefined) return c.body(new Uint8Array(audio), 200, { ...headers, "content-length": String(audio.byteLength) });
+
+    const { start, end } = range.value;
+    return c.body(new Uint8Array(audio.subarray(start, end + 1)), 206, {
+      ...headers,
+      "content-length": String(end - start + 1),
+      "content-range": `bytes ${start}-${end}/${audio.byteLength}`,
+    });
+  });
 
   // Unknown API paths must not fall through to the SPA's index.html.
   api.all("/api/*", (c) => c.json({ error: "not found" }, 404));

@@ -44,3 +44,21 @@ export async function createHarness(canned: { claude?: Claude; music?: ElevenMus
       }),
   };
 }
+
+/**
+ * Poll `read` until `done` accepts what it returned; the API is the only way to observe a
+ * run that continues after its request has been answered.
+ *
+ * @param read - Fetches the current state through the API.
+ * @param done - True once the state is the one the test waits for.
+ * @returns The state that satisfied `done`; throws after 10 s so a stuck run fails the test.
+ */
+export async function pollUntil<T>(read: () => Promise<T>, done: (value: T) => boolean): Promise<T> {
+  const deadline = Date.now() + 10_000;
+  for (;;) {
+    const value = await read();
+    if (done(value)) return value;
+    if (Date.now() > deadline) throw new Error(`gave up waiting; last state: ${JSON.stringify(value)}`);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+}
