@@ -1,15 +1,42 @@
-/** Postgres, as both `pg` and PGlite expose it. */
-export interface Sql {
+import type { Result } from "./result.ts";
+
+/** Runs queries; the same shape for a pool, a transaction and PGlite. */
+export interface Queryable {
   query<Row extends object>(text: string, params?: unknown[]): Promise<{ rows: Row[] }>;
+}
+
+/** Postgres. A transaction commits when `work` resolves and rolls back when it rejects. */
+export interface Sql extends Queryable {
+  transaction<T>(work: (tx: Queryable) => Promise<T>): Promise<T>;
 }
 
 export interface Clock {
   now(): Date;
 }
 
-/** Claude: structured output for a task (ledger extraction, lyric writing). */
+/** A JSON Schema object, as the structured-output API takes it. */
+export type JsonSchema = Readonly<Record<string, unknown>>;
+
+/** Claude could not produce an answer: network, quota, refusal or a cut-off reply. */
+export class ClaudeUnavailable extends Error {
+  readonly _tag = "ClaudeUnavailable" as const;
+
+  constructor(cause: unknown) {
+    super("Claude is unavailable", { cause });
+  }
+}
+
+/**
+ * Claude: structured output for a task (ledger extraction, lyric writing).
+ * The reply follows `schema` but is still `unknown`: callers parse it before use.
+ */
 export interface Claude {
-  structured(request: { task: string; input: string }): Promise<unknown>;
+  structured(request: {
+    task: string;
+    instructions: string;
+    schema: JsonSchema;
+    input: string;
+  }): Promise<Result<unknown, ClaudeUnavailable>>;
 }
 
 export interface WordTiming {

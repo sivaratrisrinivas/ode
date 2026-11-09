@@ -3,22 +3,43 @@ import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
 import pg from "pg";
 import { createApi } from "./app.ts";
-import { migrate, seedSkeletonLedger } from "./schema.ts";
+import { createAnthropicClaude } from "./claude.ts";
+import type { Sql } from "./ports.ts";
+import { migrate } from "./schema.ts";
 import { unwiredClaude, unwiredMusic, unwiredPayPal } from "./unwired.ts";
 
 const databaseUrl = process.env["DATABASE_URL"];
 if (!databaseUrl) throw new Error("DATABASE_URL is not set");
 
 // Add ?sslmode=require to the URL for Render's external connection string.
-const sql = new pg.Pool({ connectionString: databaseUrl });
+const pool = new pg.Pool({ connectionString: databaseUrl });
+const sql: Sql = {
+  query: (text, params) => pool.query(text, params),
+  async transaction(work) {
+    const client = await pool.connect();
+    try {
+      await client.query("begin");
+      const result = await work(client);
+      await client.query("commit");
+      return result;
+    } catch (error) {
+      await client.query("rollback");
+      throw error;
+    } finally {
+      client.release();
+    }
+  },
+};
 await migrate(sql);
-await seedSkeletonLedger(sql);
+
+const anthropicApiKey = process.env["ANTHROPIC_API_KEY"];
+if (!anthropicApiKey) console.warn("ANTHROPIC_API_KEY is not set; turning trip notes into a ledger will fail.");
 
 const api = createApi({
   sql,
   ports: {
     clock: { now: () => new Date() },
-    claude: unwiredClaude,
+    claude: anthropicApiKey ? createAnthropicClaude(anthropicApiKey) : unwiredClaude,
     music: unwiredMusic,
     paypal: unwiredPayPal,
   },

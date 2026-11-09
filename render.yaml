@@ -16,3 +16,5 @@ services:
         fromDatabase:
           name: ode-db
           property: connectionString
+      - key: ANTHROPIC_API_KEY
+        sync: false

@@ -1,0 +1,74 @@
+import type { AmountStatus, LedgerRow } from "./ledger.ts";
+import type { LedgerStore, StoredLedger } from "./ledger-service.ts";
+import type { Sql } from "./ports.ts";
+
+interface FriendRecord {
+  friend: string;
+  amount_owed_cents: number | null;
+  amount_status: AmountStatus;
+  inside_joke: string;
+}
+
+function toRow(record: FriendRecord): LedgerRow {
+  return {
+    friend: record.friend,
+    amountOwedCents: record.amount_owed_cents,
+    amountStatus: record.amount_status,
+    insideJoke: record.inside_joke,
+  };
+}
+
+const selectFriends = "select friend, amount_owed_cents, amount_status, inside_joke from ledger_friends order by position";
+
+/**
+ * Create the Postgres ledger store.
+ *
+ * @param sql - The database; `replace` runs in a transaction.
+ * @returns A store backed by the `ledger` and `ledger_friends` tables.
+ */
+export function createLedgerStore(sql: Sql): LedgerStore {
+  async function read(): Promise<StoredLedger> {
+    const meta = await sql.query<{ notes: string; warnings: string[] }>("select notes, warnings from ledger where id = 1");
+    const friends = await sql.query<FriendRecord>(selectFriends);
+    return {
+      notes: meta.rows[0]?.notes ?? "",
+      warnings: meta.rows[0]?.warnings ?? [],
+      rows: friends.rows.map(toRow),
+    };
+  }
+
+  return {
+    read,
+
+    async replace(ledger) {
+      await sql.transaction(async (tx) => {
+        await tx.query(
+          `insert into ledger (id, notes, warnings) values (1, $1, $2::jsonb)
+           on conflict (id) do update set notes = excluded.notes, warnings = excluded.warnings`,
+          [ledger.notes, JSON.stringify(ledger.warnings)],
+        );
+        await tx.query("delete from ledger_friends");
+        for (const [position, row] of ledger.rows.entries()) {
+          await tx.query(
+            `insert into ledger_friends (friend, position, amount_owed_cents, amount_status, inside_joke)
+             values ($1, $2, $3, $4, $5)`,
+            [row.friend, position, row.amountOwedCents, row.amountStatus, row.insideJoke],
+          );
+        }
+      });
+    },
+
+    async updateRow(friend, fields) {
+      const { rows } = await sql.query<FriendRecord>(
+        `update ledger_friends set
+           amount_owed_cents = coalesce($2::integer, amount_owed_cents),
+           amount_status = coalesce($3::text, amount_status),
+           inside_joke = coalesce($4::text, inside_joke)
+         where friend = $1
+         returning friend, amount_owed_cents, amount_status, inside_joke`,
+        [friend, fields.amountOwedCents ?? null, fields.amountStatus ?? null, fields.insideJoke ?? null],
+      );
+      return rows[0] === undefined ? undefined : toRow(rows[0]);
+    },
+  };
+}

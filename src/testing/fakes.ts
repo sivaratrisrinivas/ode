@@ -8,6 +8,7 @@ import type {
   PayPalOrder,
   Ports,
 } from "../server/ports.ts";
+import { ok } from "../server/result.ts";
 
 export interface FakeClock extends Clock {
   set(date: Date): void;
@@ -34,7 +35,7 @@ export function fakeClaude(canned: Record<string, unknown> = {}): Claude {
       if (!Object.hasOwn(canned, input)) {
         throw new Error(`fake Claude has no canned output for ${task} input: ${input}`);
       }
-      return canned[input];
+      return ok(canned[input]);
     },
   };
 }
