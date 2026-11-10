@@ -6,7 +6,8 @@ Use the gh CLI from this repo.
 ## Operations
 
 - Create: gh issue create --title "..." --body-file <file>
-- Read: gh issue view <number> --comments
+- Read: gh api repos/sivaratrisrinivas/ode/issues/<number> and .../issues/<number>/comments
+  (`gh issue view` fails: its GraphQL query reads Projects (classic), which GitHub has retired.)
 - List: gh issue list --state open --json number,title,body,labels,comments
 - Comment: gh issue comment <number> --body-file <file>
 - Add labels: gh issue edit <number> --add-label "..."

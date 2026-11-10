@@ -64,23 +64,30 @@ export function parseWorkflowRunId(input: string): Result<WorkflowRunId, Invalid
 }
 
 /**
+ * Every reason a run can end without an Ode. The one list: the `OdeFailure` type and the database's check on
+ * stored failures are both built from it, so a new reason is added here and the compiler finds the rest.
+ *
+ * `LyricsFlagged`: the lyrics the run used still have a flagged line.
+ * `OdeRunCrashed`: something unexpected, not a known failure, stopped the run.
+ * `OdeRunLost`: the run ended, or never reached the Workflow, without saying so.
+ */
+export const ODE_FAILURE_TAGS = [
+  "LedgerNotReady",
+  "ClaudeUnavailable",
+  "MalformedLyrics",
+  "MusicUnavailable",
+  "LyricsFlagged",
+  "OdeRunCrashed",
+  "OdeRunLost",
+] as const;
+
+/**
  * Why a run ended without an Ode, as recorded so that any web service process can tell the payer.
  * Only `LedgerNotReady` carries text for the payer: it names what to fix on the ledger.
  */
 export type OdeFailure =
   | { readonly _tag: "LedgerNotReady"; readonly message: string }
-  | {
-      readonly _tag:
-        | "ClaudeUnavailable"
-        | "MalformedLyrics"
-        | "MusicUnavailable"
-        /** The lyrics the run used still have a flagged line. */
-        | "LyricsFlagged"
-        /** Something unexpected, not a known failure, stopped the run. */
-        | "OdeRunCrashed"
-        /** The run ended, or never reached the Workflow, without saying so. */
-        | "OdeRunLost";
-    };
+  | { readonly _tag: Exclude<(typeof ODE_FAILURE_TAGS)[number], "LedgerNotReady"> };
 
 /** The run in progress, as stored. */
 export interface MakingRun {

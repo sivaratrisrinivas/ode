@@ -1,7 +1,8 @@
+import { ODE_FAILURE_TAGS } from "./ode-run.ts";
 import type { Sql } from "./ports.ts";
 
 /** The `OdeFailure` tags a run row may hold, as a SQL list. */
-const RUN_FAILURES = "('LedgerNotReady', 'ClaudeUnavailable', 'MalformedLyrics', 'MusicUnavailable', 'LyricsFlagged', 'OdeRunCrashed', 'OdeRunLost')";
+const RUN_FAILURES = `(${ODE_FAILURE_TAGS.map((tag) => `'${tag}'`).join(", ")})`;
 
 /** Creates tables if missing; idempotent, so it is safe on every boot. */
 export async function migrate(sql: Sql): Promise<void> {
