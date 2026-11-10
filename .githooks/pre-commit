@@ -1,0 +1,3 @@
+#!/bin/sh
+# Typecheck is fast; the full test suite runs in CI (it boots Postgres per file and takes over a minute).
+npm run --silent typecheck

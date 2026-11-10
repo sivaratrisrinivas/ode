@@ -10,6 +10,8 @@
   "scripts": {
     "dev:server": "node --watch src/server/main.ts",
     "dev:client": "vite",
+    "dev:fake": "vite build && node src/testing/dev-fake.ts",
+    "prepare": "git config core.hooksPath .githooks || true",
     "build": "vite build",
     "start": "node src/server/main.ts",
     "typecheck": "tsc --noEmit",

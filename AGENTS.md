@@ -15,6 +15,14 @@ See `docs/agents/triage-labels.md`.
 Use a single-context layout with root `GLOSSARY.md` and `docs/adr/`.
 See `docs/agents/domain.md`.
 
+### Running the app
+
+Run it without keys, with fakes. See `docs/agents/run.md`.
+
+### Coding standards
+
+Judgement calls the reviewer enforces. See `CODING_STANDARDS.md`.
+
 ## Ticket rule
 
 Every ticket answers: What, Why, Where, What if, Who, When.
