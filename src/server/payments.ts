@@ -10,7 +10,18 @@ export interface PaymentStore {
   /** Gross cents captured so far for each friend who has been paid anything; not capped at what is owed. */
   totals(): Promise<ReadonlyMap<string, number>>;
   /** Record a capture. A capture ID already recorded changes nothing, so the same payment is never counted twice. */
-  record(payment: { captureId: string; friend: string; amountCents: number }): Promise<void>;
+  record(payment: { captureId: string; orderId: string; friend: string; amountCents: number }): Promise<void>;
+  /** Whether a capture of this order has been recorded, whichever of the capture response and the webhook recorded it. */
+  hasOrder(orderId: string): Promise<boolean>;
+  /** Whether this capture has been recorded. */
+  hasCapture(captureId: string): Promise<boolean>;
+}
+
+/** A completed capture as PayPal's webhook reports it. `amountCents` is gross, before PayPal's fee. */
+export interface CapturedPayment {
+  captureId: string;
+  orderId: string;
+  amountCents: number;
 }
 
 /** Where one friend stands: what is owed, what has been repaid and which of their lines are unlocked. */
@@ -133,6 +144,16 @@ export interface Payments {
    * @returns The paid friend's new standing, or why no payment was counted: a declined payment sent nothing.
    */
   capture(orderId: string): Promise<Result<FriendStanding, CaptureError>>;
+  /**
+   * Count a capture PayPal's webhook says completed. Money has moved, so it counts even past what is owed (the amount
+   * repaid is capped when read), and a capture the capture response already recorded, or an earlier delivery of
+   * the same event, changes nothing.
+   *
+   * @param payment - The capture; the order it belongs to is read back to find which friend it paid.
+   * @returns "recorded", or "ignored" for an order that did not pay a friend on the ledger. A PayPal that cannot be
+   *   reached is an error, so the webhook can be asked to deliver again.
+   */
+  confirm(payment: CapturedPayment): Promise<Result<"recorded" | "ignored", PayPalUnavailable>>;
 }
 
 /** A dollar amount for a message to the payer: 4750 is "$47.50". */
@@ -179,6 +200,14 @@ export function createPayments(deps: { ledger: Pick<LedgerStore, "read">; store:
     return amountCents > remaining ? new AmountTooHigh(standing.friend, remaining) : undefined;
   }
 
+  /** The friend's standing, right after a payment to them was recorded. */
+  async function standingOf(friend: string): Promise<FriendStanding> {
+    const standing = (await standings()).find((candidate) => candidate.friend === friend);
+    // Defect: `record` just stored a payment for a friend who had an amount owed a moment ago; only a ledger rebuilt mid-request removes them.
+    if (standing === undefined) throw new Error(`${friend} left the ledger while their payment was recorded`);
+    return standing;
+  }
+
   return {
     standings,
 
@@ -202,6 +231,13 @@ export function createPayments(deps: { ledger: Pick<LedgerStore, "read">; store:
       const friend = deps.accounts.friendFor(order.value.friendEmail);
       if (friend === undefined) return err(new NotAFriendsOrder());
 
+      // The webhook got here first: this payment is already counted, so the response changes nothing.
+      if (await deps.store.hasOrder(orderId)) {
+        const counted = (await standings()).find((candidate) => candidate.friend === friend);
+        // The payment was recorded earlier; a ledger rebuilt since has dropped the friend it paid.
+        return counted === undefined ? err(new NotAFriendsOrder()) : ok(counted);
+      }
+
       const standing = await payable(friend);
       // A payee who is no longer on the ledger is not one of the friends this order can pay.
       if (standing._tag === "err") return err(standing.error._tag === "UnknownFriend" ? new NotAFriendsOrder() : standing.error);
@@ -213,11 +249,22 @@ export function createPayments(deps: { ledger: Pick<LedgerStore, "read">; store:
       if (capture.value.status === "DECLINED") return err(new PaymentDeclined());
 
       // The capture's amount is gross, before PayPal's fee, and the same capture ID is only ever counted once.
-      await deps.store.record({ captureId: capture.value.captureId, friend, amountCents: capture.value.amountCents });
-      const updated = (await standings()).find((candidate) => candidate.friend === friend);
-      // Defect: the friend was on the ledger with an amount a moment ago; only a ledger rebuilt mid-request removes them.
-      if (updated === undefined) throw new Error(`${friend} left the ledger while their payment was recorded`);
-      return ok(updated);
+      await deps.store.record({ captureId: capture.value.captureId, orderId, friend, amountCents: capture.value.amountCents });
+      return ok(await standingOf(friend));
+    },
+
+    async confirm({ captureId, orderId, amountCents }) {
+      // A delivery of an event already counted needs nothing from PayPal, so a PayPal outage cannot fail it.
+      if (await deps.store.hasCapture(captureId)) return ok("recorded");
+      const order = await deps.paypal.getOrder(orderId);
+      if (order._tag === "err") return order;
+      const friend = deps.accounts.friendFor(order.value.friendEmail);
+      if (friend === undefined) return ok("ignored");
+      const ledger = await deps.ledger.read();
+      // A friend with no amount owed, or none on the ledger any more, has no lines this payment could unlock.
+      if (!ledger.rows.some((row) => row.friend === friend && row.amountOwedCents !== null)) return ok("ignored");
+      await deps.store.record({ captureId, orderId, friend, amountCents });
+      return ok("recorded");
     },
   };
 }

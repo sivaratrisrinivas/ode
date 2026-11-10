@@ -25,6 +25,9 @@ services:
         sync: false
       - key: PAYPAL_ENV
         value: sandbox
+      # The ID of the webhook subscribed to PAYMENT.CAPTURE.COMPLETED, pointing at /api/payments/webhook (see .env.example).
+      - key: PAYPAL_WEBHOOK_ID
+        sync: false
       # Name=email pairs: the sandbox Personal account that pays each friend (see .env.example).
       - key: FRIEND_PAYPAL_ACCOUNTS
         sync: false

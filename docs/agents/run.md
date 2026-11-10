@@ -17,4 +17,6 @@ Open http://localhost:3000 (`PORT` changes it). State is in memory and ends with
   Building a ledger over an existing one asks `window.confirm`; a fresh `dev:fake` process has none.
 - Stop it with `kill $(lsof -ti :$PORT)`. `pkill -f dev-fake` also matches the shell running it and kills that.
 
-`npm run dev:server` is the real thing and needs `DATABASE_URL`, `ANTHROPIC_API_KEY` and `ELEVENLABS_API_KEY`, plus `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET` and `FRIEND_PAYPAL_ACCOUNTS` to pay friends (see `.env.example`).
+The webhook is `POST /api/payments/webhook`; under `dev:fake` it trusts a request whose `paypal-transmission-sig` header is `valid`. After a payment the page shows a green unlock banner, flares the new lines and plays the first of them.
+
+`npm run dev:server` is the real thing and needs `DATABASE_URL`, `ANTHROPIC_API_KEY` and `ELEVENLABS_API_KEY`, plus `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET` and `FRIEND_PAYPAL_ACCOUNTS` to pay friends (and `PAYPAL_WEBHOOK_ID` to trust the capture webhook) (see `.env.example`).

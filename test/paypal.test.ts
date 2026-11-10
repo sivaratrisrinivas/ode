@@ -117,6 +117,58 @@ describe("the PayPal adapter", () => {
   });
 });
 
+describe("the PayPal adapter's webhook check", () => {
+  const VERIFY = "POST https://api-m.sandbox.paypal.com/v1/notifications/verify-webhook-signature";
+  const headers = {
+    "paypal-auth-algo": "SHA256withRSA",
+    "paypal-cert-url": "https://api.sandbox.paypal.com/v1/notifications/certs/CERT-1",
+    "paypal-transmission-id": "TX-1",
+    "paypal-transmission-sig": "SIG",
+    "paypal-transmission-time": "2026-11-10T10:00:00Z",
+  };
+  const body = JSON.stringify({ id: "WH-1", event_type: "PAYMENT.CAPTURE.COMPLETED" });
+  const withWebhook = (send: typeof fetch) => createPayPal({ clientId: "id", clientSecret: "secret", env: "sandbox", webhookId: "HOOK-1", fetch: send });
+
+  it("asks PayPal to verify the signature against the webhook's ID and the event as received", async () => {
+    const { send, calls } = paypalFetch({ [VERIFY]: { body: { verification_status: "SUCCESS" } } });
+
+    expect(await withWebhook(send).verifyWebhook({ headers, body })).toBe(true);
+
+    const sent = JSON.parse(calls.find((call) => call.url.endsWith("/verify-webhook-signature"))?.body ?? "{}");
+    expect(sent).toEqual({
+      auth_algo: "SHA256withRSA",
+      cert_url: "https://api.sandbox.paypal.com/v1/notifications/certs/CERT-1",
+      transmission_id: "TX-1",
+      transmission_sig: "SIG",
+      transmission_time: "2026-11-10T10:00:00Z",
+      webhook_id: "HOOK-1",
+      webhook_event: JSON.parse(body),
+    });
+  });
+
+  it("trusts nothing PayPal does not call a success", async () => {
+    const failure = paypalFetch({ [VERIFY]: { body: { verification_status: "FAILURE" } } });
+    const refused = paypalFetch({ [VERIFY]: { status: 400, body: { name: "INVALID_REQUEST" } } });
+    const down: typeof fetch = async () => {
+      throw new Error("offline");
+    };
+
+    expect(await withWebhook(failure.send).verifyWebhook({ headers, body })).toBe(false);
+    expect(await withWebhook(refused.send).verifyWebhook({ headers, body })).toBe(false);
+    expect(await withWebhook(down).verifyWebhook({ headers, body })).toBe(false);
+  });
+
+  it("trusts nothing when the body is not JSON, a header is missing or no webhook ID is set", async () => {
+    const { send, calls } = paypalFetch({ [VERIFY]: { body: { verification_status: "SUCCESS" } } });
+    const { "paypal-transmission-sig": _sig, ...unsigned } = headers;
+
+    expect(await withWebhook(send).verifyWebhook({ headers, body: "not json" })).toBe(false);
+    expect(await withWebhook(send).verifyWebhook({ headers: unsigned, body })).toBe(false);
+    expect(await adapter(send).verifyWebhook({ headers, body })).toBe(false);
+    expect(calls).toHaveLength(0);
+  });
+});
+
 describe("friend accounts", () => {
   it("finds a friend's account and an account's friend whatever the letter case", () => {
     const accounts = friendAccounts({ Tharun: "Tharun@Example.com" });

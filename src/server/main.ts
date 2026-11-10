@@ -61,8 +61,10 @@ const paypalClientId = process.env["PAYPAL_CLIENT_ID"];
 const paypalClientSecret = process.env["PAYPAL_CLIENT_SECRET"];
 const paypalEnv = process.env["PAYPAL_ENV"] ?? "sandbox";
 if (paypalEnv !== "sandbox" && paypalEnv !== "live") throw new Error(`PAYPAL_ENV must be sandbox or live, not ${paypalEnv}`);
+const paypalWebhookId = process.env["PAYPAL_WEBHOOK_ID"];
+if (!paypalWebhookId) console.warn("PAYPAL_WEBHOOK_ID is not set; PayPal's payment webhooks will be rejected and only capture responses unlock lines.");
 if (!paypalClientId || !paypalClientSecret) console.warn("PAYPAL_CLIENT_ID and PAYPAL_CLIENT_SECRET are not set; paying a friend will fail.");
-const paypal: PayPal = paypalClientId && paypalClientSecret ? createPayPal({ clientId: paypalClientId, clientSecret: paypalClientSecret, env: paypalEnv }) : unwiredPayPal;
+const paypal: PayPal = paypalClientId && paypalClientSecret ? createPayPal({ clientId: paypalClientId, clientSecret: paypalClientSecret, env: paypalEnv, ...(paypalWebhookId ? { webhookId: paypalWebhookId } : {}) }) : unwiredPayPal;
 
 const api = createApi({
   sql,

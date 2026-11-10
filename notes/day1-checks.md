@@ -16,7 +16,7 @@ Run 2026-11-08. Each item: result, then the decision it drives.
 
 **Decisions**
 - Friends stay **Personal** sandbox accounts; the Business fallback isn't needed.
-- Unlock from the capture response (`status: COMPLETED`); webhook only confirms.
+- Unlock from whichever of the capture response (`status: COMPLETED`) and the verified webhook arrives first, keyed on the capture ID (#27).
 - Receiver fees are real even for Personal payees, which stays in README Limitations.
 
 **Sandbox accounts:** payer `askubusku18@gmail.com`; friends `sahitishastrula1402@gmail.com`, `vikram_vickey10@outlook.com`, `tharunbandaru18@gmail.com` (Personal); `sb-7gyt253787974@business.example.com` (Business, spare).

@@ -111,4 +111,6 @@ export async function migrate(sql: Sql): Promise<void> {
        captured_at timestamptz not null default now()
      )`,
   );
+  // The order a capture belongs to, so a capture response that follows the webhook for the same order is known for what it is.
+  await sql.query("alter table payments add column if not exists order_id text");
 }

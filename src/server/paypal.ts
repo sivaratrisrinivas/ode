@@ -5,12 +5,16 @@ const HOSTS = { sandbox: "https://api-m.sandbox.paypal.com", live: "https://api-
 /** A PayPal call takes a second or two; this only stops a hung request from holding the payer's page. */
 const TIMEOUT_MS = 30_000;
 
-function field(value: unknown, name: string): unknown {
+/** The headers PayPal signs a webhook with, in the order PayPal's verification call takes them: algorithm, certificate, ID, signature, time. */
+const SIGNATURE_HEADERS = ["paypal-auth-algo", "paypal-cert-url", "paypal-transmission-id", "paypal-transmission-sig", "paypal-transmission-time"] as const;
+
+/** The named property of an object reply; undefined when `value` is not an object or lacks it. */
+export function field(value: unknown, name: string): unknown {
   return typeof value === "object" && value !== null ? Reflect.get(value, name) : undefined;
 }
 
 /** "50.00" to 5000; undefined when it is not an amount. */
-function toCents(value: unknown): number | undefined {
+export function toCents(value: unknown): number | undefined {
   const cents = typeof value === "string" ? Math.round(Number(value) * 100) : NaN;
   return Number.isInteger(cents) ? cents : undefined;
 }
@@ -43,11 +47,12 @@ function firstCapture(reply: unknown): { captureId: string; status: unknown; amo
 /**
  * The production PayPal port over Orders v2: create an order with a payee per friend, capture it, and read it back
  * (the capture reply has no payee, `notes/day1-checks.md`). It gets an access token with the client credentials and
- * keeps it until shortly before it expires.
+ * keeps it until shortly before it expires. A webhook is trusted only when PayPal itself verifies its signature
+ * against `webhookId`; with no `webhookId`, none is.
  *
- * @param options - The app's sandbox (or live) credentials; `fetch` is replaceable for tests.
+ * @param options - The app's sandbox (or live) credentials and the webhook's ID; `fetch` is replaceable for tests.
  */
-export function createPayPal(options: { clientId: string; clientSecret: string; env: "sandbox" | "live"; fetch?: typeof fetch }): PayPal {
+export function createPayPal(options: { clientId: string; clientSecret: string; env: "sandbox" | "live"; webhookId?: string; fetch?: typeof fetch }): PayPal {
   const send = options.fetch ?? fetch;
   const host = HOSTS[options.env];
   let token: { value: string; expiresAt: number } | undefined;
@@ -74,9 +79,9 @@ export function createPayPal(options: { clientId: string; clientSecret: string; 
     return value;
   }
 
-  /** Call the Orders API; the reply's status and JSON body are returned whatever the status, for callers that read a refusal. */
-  async function call(method: "GET" | "POST", path: string, body?: unknown): Promise<{ status: number; reply: unknown }> {
-    const response = await send(`${host}/v2/checkout/orders${path}`, {
+  /** Call PayPal; the reply's status and JSON body are returned whatever the status, for callers that read a refusal. */
+  async function request(method: "GET" | "POST", url: string, body?: unknown): Promise<{ status: number; reply: unknown }> {
+    const response = await send(url, {
       method,
       headers: { authorization: `Bearer ${await accessToken()}`, "content-type": "application/json" },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
@@ -84,6 +89,8 @@ export function createPayPal(options: { clientId: string; clientSecret: string; 
     });
     return { status: response.status, reply: await response.json().catch(() => undefined) };
   }
+
+  const call = (method: "GET" | "POST", path: string, body?: unknown) => request(method, `${host}/v2/checkout/orders${path}`, body);
 
   const failed = (what: string, status: number, reply: unknown) =>
     err(new PayPalUnavailable(new Error(`${what}: HTTP ${status} ${JSON.stringify(reply)?.slice(0, 300)}`)));
@@ -138,9 +145,26 @@ export function createPayPal(options: { clientId: string; clientSecret: string; 
       }
     },
 
-    async verifyWebhook() {
-      // Verifying the webhook is #27; until then no webhook is trusted.
-      return false;
+    async verifyWebhook({ headers, body }) {
+      // Anything short of PayPal saying the signature is good (no webhook ID, a missing header, a body that is not
+      // JSON, PayPal unreachable) is a webhook that is not trusted.
+      if (options.webhookId === undefined) return false;
+      const [algo, certUrl, id, signature, time] = SIGNATURE_HEADERS.map((name) => headers[name]);
+      if (algo === undefined || certUrl === undefined || id === undefined || signature === undefined || time === undefined) return false;
+      try {
+        const { reply } = await request("POST", `${host}/v1/notifications/verify-webhook-signature`, {
+          auth_algo: algo,
+          cert_url: certUrl,
+          transmission_id: id,
+          transmission_sig: signature,
+          transmission_time: time,
+          webhook_id: options.webhookId,
+          webhook_event: JSON.parse(body),
+        });
+        return field(reply, "verification_status") === "SUCCESS";
+      } catch {
+        return false;
+      }
     },
   };
 }

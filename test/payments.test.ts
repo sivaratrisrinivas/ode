@@ -288,4 +288,176 @@ describe("paying a friend", () => {
 
     expect(await json(await harness.get("/api/config"))).toEqual({ paypalClientId: null });
   });
+
+  describe("the capture webhook", () => {
+    /** An order the payer has approved and PayPal has captured, but whose capture response has not reached the API. */
+    async function approvedOrder(harness: Harness, friend: string, amountCents: number) {
+      const created = await json<{ orderId: string }>(await harness.post("/api/payments/orders", { friend, amountCents }));
+      const capture = await harness.paypal.captureOrder(created.orderId);
+      if (capture._tag === "err" || capture.value.status !== "COMPLETED") throw new Error("the fake PayPal did not complete the capture");
+      return { orderId: created.orderId, captureId: capture.value.captureId };
+    }
+
+    /** PayPal's `PAYMENT.CAPTURE.COMPLETED` event for a capture, as it is posted to the webhook URL. */
+    function completed({ orderId, captureId }: { orderId: string; captureId: string }, amountCents: number, eventType = "PAYMENT.CAPTURE.COMPLETED") {
+      return {
+        id: `WH-${captureId}`,
+        event_type: eventType,
+        resource: {
+          id: captureId,
+          status: "COMPLETED",
+          amount: { currency_code: "USD", value: (amountCents / 100).toFixed(2) },
+          supplementary_data: { related_ids: { order_id: orderId } },
+        },
+      };
+    }
+
+    const SIGNED = { "paypal-transmission-sig": "valid" };
+
+    it("unlocks the lines for a payment whose capture response never arrives", async () => {
+      const harness = await odeHarness();
+      const order = await approvedOrder(harness, THARUN, 5_000);
+
+      const webhook = await harness.post("/api/payments/webhook", completed(order, 5_000), SIGNED);
+
+      expect(webhook.status).toBe(200);
+      expect(lockedLines((await verses(harness))["Tharun"])).toEqual([false, false, true, true]);
+    });
+
+    it("unlocks once when the webhook arrives before the capture response, and the later response changes nothing", async () => {
+      const harness = await odeHarness();
+      const order = await approvedOrder(harness, THARUN, 5_000);
+      await harness.post("/api/payments/webhook", completed(order, 5_000), SIGNED);
+
+      const captured = await harness.post("/api/payments/capture", { orderId: order.orderId });
+
+      expect(captured.status).toBe(200);
+      expect(await json(captured)).toMatchObject({ friend: "Tharun", amountRepaidCents: 5_000, linesUnlocked: 2 });
+      expect((await verses(harness))["Tharun"]?.payment?.amountRepaidCents).toBe(5_000);
+    });
+
+    it("unlocks nothing new when the webhook arrives after the capture response", async () => {
+      const harness = await odeHarness();
+      const order = await approvedOrder(harness, THARUN, 5_000);
+      await harness.post("/api/payments/capture", { orderId: order.orderId });
+
+      const webhook = await harness.post("/api/payments/webhook", completed(order, 5_000), SIGNED);
+
+      expect(webhook.status).toBe(200);
+      expect((await verses(harness))["Tharun"]?.payment).toMatchObject({ amountRepaidCents: 5_000, linesUnlocked: 2 });
+    });
+
+    it("unlocks nothing new when PayPal delivers the same webhook again", async () => {
+      const harness = await odeHarness();
+      const order = await approvedOrder(harness, THARUN, 5_000);
+
+      await harness.post("/api/payments/webhook", completed(order, 5_000), SIGNED);
+      const again = await harness.post("/api/payments/webhook", completed(order, 5_000), SIGNED);
+
+      expect(again.status).toBe(200);
+      expect((await verses(harness))["Tharun"]?.payment?.amountRepaidCents).toBe(5_000);
+    });
+
+    it("counts once when the webhook and the capture response arrive at the same moment", async () => {
+      const harness = await odeHarness();
+      const order = await approvedOrder(harness, THARUN, 5_000);
+
+      const [webhook, captured] = await Promise.all([
+        harness.post("/api/payments/webhook", completed(order, 5_000), SIGNED),
+        harness.post("/api/payments/capture", { orderId: order.orderId }),
+      ]);
+
+      expect(webhook.status).toBe(200);
+      expect(captured.status).toBe(200);
+      expect((await verses(harness))["Tharun"]?.payment).toMatchObject({ amountRepaidCents: 5_000, linesUnlocked: 2 });
+    });
+
+    it("answers a repeated webhook delivery even while PayPal is down", async () => {
+      const harness = await odeHarness();
+      const order = await approvedOrder(harness, THARUN, 5_000);
+      await harness.post("/api/payments/webhook", completed(order, 5_000), SIGNED);
+      harness.paypal.failNextRequest();
+
+      const again = await harness.post("/api/payments/webhook", completed(order, 5_000), SIGNED);
+
+      expect(again.status).toBe(200);
+    });
+
+    it("counts a repeated capture response as nothing new", async () => {
+      const harness = await odeHarness();
+      const order = await approvedOrder(harness, THARUN, 5_000);
+
+      const first = await harness.post("/api/payments/capture", { orderId: order.orderId });
+      const second = await harness.post("/api/payments/capture", { orderId: order.orderId });
+
+      expect(first.status).toBe(200);
+      expect(second.status).toBe(200);
+      expect((await verses(harness))["Tharun"]?.payment?.amountRepaidCents).toBe(5_000);
+    });
+
+    it("rejects a webhook PayPal did not sign, and unlocks nothing", async () => {
+      const harness = await odeHarness();
+      const order = await approvedOrder(harness, THARUN, 5_000);
+
+      const forged = await harness.post("/api/payments/webhook", completed(order, 5_000), { "paypal-transmission-sig": "forged" });
+      const unsigned = await harness.post("/api/payments/webhook", completed(order, 5_000));
+
+      expect(forged.status).toBe(401);
+      expect(unsigned.status).toBe(401);
+      expect(lockedLines((await verses(harness))["Tharun"])).toEqual([true, true, true, true]);
+    });
+
+    it("ignores other events without unlocking anything", async () => {
+      const harness = await odeHarness();
+      const order = await approvedOrder(harness, THARUN, 5_000);
+
+      const webhook = await harness.post("/api/payments/webhook", completed(order, 5_000, "PAYMENT.CAPTURE.DENIED"), SIGNED);
+
+      expect(webhook.status).toBe(200);
+      expect((await verses(harness))["Tharun"]?.payment?.amountRepaidCents).toBe(0);
+    });
+
+    it("ignores a capture for an order that did not pay one of the friends", async () => {
+      const harness = await odeHarness();
+      const stranger = await harness.paypal.createOrder({ friendEmail: "stranger@example.com", amountCents: 100 });
+      if (stranger._tag === "err") throw stranger.error;
+      const capture = await harness.paypal.captureOrder(stranger.value.orderId);
+      if (capture._tag === "err" || capture.value.status !== "COMPLETED") throw new Error("not captured");
+
+      const webhook = await harness.post("/api/payments/webhook", completed({ orderId: stranger.value.orderId, captureId: capture.value.captureId }, 100), SIGNED);
+
+      expect(webhook.status).toBe(200);
+      expect(Object.values(await verses(harness)).map((verse) => verse.payment?.amountRepaidCents)).toEqual([0, 0, 0]);
+    });
+
+    it("asks PayPal to deliver again when it cannot read the order back", async () => {
+      const harness = await odeHarness();
+      const order = await approvedOrder(harness, THARUN, 5_000);
+      harness.paypal.failNextRequest();
+
+      const webhook = await harness.post("/api/payments/webhook", completed(order, 5_000), SIGNED);
+      const retried = await harness.post("/api/payments/webhook", completed(order, 5_000), SIGNED);
+
+      expect(webhook.status).toBe(502);
+      expect(retried.status).toBe(200);
+      expect((await verses(harness))["Tharun"]?.payment?.amountRepaidCents).toBe(5_000);
+    });
+
+    it("counts a captured payment even when it takes a friend to what is owed", async () => {
+      const harness = await odeHarness();
+      const order = await approvedOrder(harness, THARUN, 9_750);
+
+      await harness.post("/api/payments/webhook", completed(order, 9_750), SIGNED);
+
+      expect((await verses(harness))["Tharun"]?.payment).toMatchObject({ amountRepaidCents: 9_750, canPay: false });
+    });
+
+    it("rejects an event that is not a readable capture", async () => {
+      const harness = await odeHarness();
+
+      const webhook = await harness.post("/api/payments/webhook", { event_type: "PAYMENT.CAPTURE.COMPLETED", resource: {} }, SIGNED);
+
+      expect(webhook.status).toBe(422);
+    });
+  });
 });

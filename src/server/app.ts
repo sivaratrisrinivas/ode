@@ -10,6 +10,7 @@ import { createLyricsStore } from "./lyrics-store.ts";
 import { ODE_STEPS, parseRunId, type OdeFailure, type OdeStep, type RunId } from "./ode-run.ts";
 import { createOdeMaker, type OdeStatus, type StartOdeError } from "./ode-service.ts";
 import { createOdeStore } from "./ode-store.ts";
+import { parseWebhookEvent } from "./paypal-webhook.ts";
 import { createPaymentStore } from "./payment-store.ts";
 import { createPayments, type CaptureError, type CreateOrderError, type FriendStanding } from "./payments.ts";
 import { parseLineEdit, parseLineNumber, type LineSlot, type LyricLine, type Lyrics, type NoSuchLine } from "./lyrics.ts";
@@ -304,6 +305,27 @@ export function createApi({
       return c.json({ error: message }, status);
     }
     return c.json({ friend: paid.value.friend, ...standingJson(paid.value) });
+  });
+
+  // PayPal calls this, not the page: it carries no payer session, only PayPal's signature, which PayPal verifies.
+  api.post("/api/payments/webhook", async (c) => {
+    const body = await c.req.text();
+    // Header names are lower-case here, as the port expects.
+    if (!(await ports.paypal.verifyWebhook({ headers: Object.fromEntries(c.req.raw.headers), body }))) {
+      return c.json({ error: "The webhook signature could not be verified." }, 401);
+    }
+
+    const event = parseWebhookEvent(body);
+    if (event._tag === "err") return c.json({ error: event.error.message }, 422);
+    if (event.value === "other") return c.json({ ok: true });
+
+    const confirmed = await payments.confirm(event.value);
+    if (confirmed._tag === "err") {
+      // PayPal delivers again after a failure, and nothing was counted.
+      console.error(`confirming a captured payment failed (${confirmed.error._tag}):`, confirmed.error);
+      return c.json({ error: "Couldn't reach PayPal just now." }, 502);
+    }
+    return c.json({ ok: true });
   });
 
   api.get("/api/ode/audio", async (c) => {

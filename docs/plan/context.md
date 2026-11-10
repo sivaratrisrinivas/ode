@@ -54,7 +54,7 @@ Solo, about 12 h/day (10 is not a hard limit), uses AI coding agents. Skills: Go
 - Worst criterion: Impact.
 - Closest prior work: "Karen" (AI Tinkerers NYC), a creditor-side debt chaser; pay-to-unlock song vendors.
 - Gap: no song found whose verses unlock as you repay *different people*.
-- PayPal: personal-account payees unconfirmed (fallback: business sandbox accounts). Unlock from the capture response; the webhook only confirms.
+- PayPal: personal-account payees unconfirmed (fallback: business sandbox accounts). Unlock from whichever of the capture response and the verified webhook arrives first, keyed on the capture ID (#27).
 - Render: Workflows run TypeScript or Python; free Postgres expires after 30 days, so use paid.
 
 ## Kill delta after the grilling session (2026-11-08, inline; no second independent review)
