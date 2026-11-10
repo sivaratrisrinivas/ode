@@ -3,7 +3,7 @@
 ### Issue tracker
 
 Issues and specs live in GitHub Issues for sivaratrisrinivas/ode.
-See `docs/agents/issue-tracker.md`.
+Read issues with `gh api repos/sivaratrisrinivas/ode/issues/<n>` (`gh issue view` fails). See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 

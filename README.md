@@ -36,7 +36,7 @@ Without `RENDER_API_KEY` and `ODE_WORKFLOW_SLUG`, and off Render, the web servic
 
 ```sh
 npm test            # API tests: in-process Postgres, fakes for Claude, Eleven Music, PayPal, the clock and the Workflow
-npm run typecheck
+npm run check       # tsc, and every type assertion has a SAFETY comment
 ```
 
 Tests drive the HTTP API only (`test/harness.ts`). The fake Workflow runs the task's job in the test process with its own database stores, as a separate process would. `test/render-workflow.test.ts` and `test/workflow-config.test.ts` cover the two pieces that only touch Render's SDK and the environment.
