@@ -8,5 +8,7 @@ export default defineConfig({
     testTimeout: 90_000,
     hookTimeout: 90_000,
     maxWorkers: 3,
+    // Every run leaves its failures (names and messages) in a file, so a truncated terminal never hides them.
+    reporters: ["default", ["json", { outputFile: ".vitest/last.json" }]],
   },
 });

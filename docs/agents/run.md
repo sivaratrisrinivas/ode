@@ -15,7 +15,9 @@ Open http://localhost:3000 (`PORT` changes it). State is in memory and ends with
   });
   ```
   Building a ledger over an existing one asks `window.confirm`; a fresh `dev:fake` process has none.
-- Stop it with `kill $(lsof -ti :$PORT)`. `pkill -f dev-fake` also matches the shell running it and kills that.
+- `node scripts/drive-fake.mjs [shot.png]` runs that whole flow against a running `dev:fake` (`PORT`) and pays Tharun $50. The fake Ode's audio is junk bytes, so nothing is audible; the script records each `play()` request and where it started instead.
+- Stop it with `kill $(lsof -ti :$PORT)`. A hook blocks `pkill -f` and `pgrep -f`, which match the shell running them.
+- `npm test` takes 2 to 7 minutes: run it in the background. Every run writes its failures to `.vitest/last.json`.
 
 The webhook is `POST /api/payments/webhook`; under `dev:fake` it trusts a request whose `paypal-transmission-sig` header is `valid`. After a payment the page shows a green unlock banner, flares the new lines and plays the first of them.
 
