@@ -3,10 +3,10 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   test: {
     include: ["test/**/*.test.ts"],
-    testTimeout: 30_000,
-    hookTimeout: 30_000,
-    // Each API test file boots its own in-process Postgres (PGlite, ~5 s alone). With four booting at once
-    // the first test of every file passed the 30 s limit on an 8-core WSL machine; three at once was fine.
+    // The first test of each API file waits for its in-process Postgres to boot (PGlite: ~5 s alone, 20 to 40 s
+    // with several booting at once on a loaded WSL machine), so the limit leaves room for the slow case.
+    testTimeout: 90_000,
+    hookTimeout: 90_000,
     maxWorkers: 3,
   },
 });
