@@ -100,7 +100,7 @@ export function OdeStudio(): ReactElement {
       </>
     );
   }
-  if (load.status === "ready") return <Cassette ode={load} />;
+  if (load.status === "ready") return <Cassette ode={load} onPaid={() => void refresh()} />;
 
   return (
     <>

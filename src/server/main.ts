@@ -6,9 +6,11 @@ import pg from "pg";
 import { createApi } from "./app.ts";
 import { createAnthropicClaude } from "./claude.ts";
 import { createElevenMusic } from "./eleven-music.ts";
+import { parseFriendAccounts } from "./friend-accounts.ts";
 import { createInProcessWorkflow } from "./in-process-workflow.ts";
 import { createOdeJob } from "./ode-job.ts";
-import type { Claude, OdeWorkflow } from "./ports.ts";
+import { createPayPal } from "./paypal.ts";
+import type { Claude, OdeWorkflow, PayPal } from "./ports.ts";
 import { createPostgresSql } from "./postgres.ts";
 import { Redacted } from "./redacted.ts";
 import { createRenderWorkflow } from "./render-workflow.ts";
@@ -51,10 +53,23 @@ function createWorkflow(choice: WorkflowChoice): OdeWorkflow {
   return createInProcessWorkflow(createOdeJob({ sql, claude, music }));
 }
 
+const accounts = parseFriendAccounts(process.env["FRIEND_PAYPAL_ACCOUNTS"]);
+if (accounts._tag === "err") throw accounts.error;
+if (!process.env["FRIEND_PAYPAL_ACCOUNTS"]) console.warn("FRIEND_PAYPAL_ACCOUNTS is not set; paying a friend will fail.");
+
+const paypalClientId = process.env["PAYPAL_CLIENT_ID"];
+const paypalClientSecret = process.env["PAYPAL_CLIENT_SECRET"];
+const paypalEnv = process.env["PAYPAL_ENV"] ?? "sandbox";
+if (paypalEnv !== "sandbox" && paypalEnv !== "live") throw new Error(`PAYPAL_ENV must be sandbox or live, not ${paypalEnv}`);
+if (!paypalClientId || !paypalClientSecret) console.warn("PAYPAL_CLIENT_ID and PAYPAL_CLIENT_SECRET are not set; paying a friend will fail.");
+const paypal: PayPal = paypalClientId && paypalClientSecret ? createPayPal({ clientId: paypalClientId, clientSecret: paypalClientSecret, env: paypalEnv }) : unwiredPayPal;
+
 const api = createApi({
   sql,
-  ports: { clock: { now: () => new Date() }, claude, paypal: unwiredPayPal },
+  ports: { clock: { now: () => new Date() }, claude, paypal },
   workflow: createWorkflow(workflowChoice.value),
+  friendAccounts: accounts.value,
+  paypalClientId: paypalClientSecret ? paypalClientId : undefined,
 });
 
 const app = new Hono();

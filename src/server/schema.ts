@@ -101,4 +101,14 @@ export async function migrate(sql: Sql): Promise<void> {
        primary key (position, line_no)
      )`,
   );
+  // Each captured payment, gross, keyed on PayPal's capture ID so the same capture is only ever counted once. A
+  // payment is to a friend on the ledger and cascades away with them when the ledger is replaced.
+  await sql.query(
+    `create table if not exists payments (
+       capture_id text primary key,
+       friend text not null references ledger_friends (friend) on delete cascade,
+       amount_cents integer not null check (amount_cents > 0),
+       captured_at timestamptz not null default now()
+     )`,
+  );
 }

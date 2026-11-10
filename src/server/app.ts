@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { Hono, type Context } from "hono";
 import { parseByteRange } from "./byte-range.ts";
+import type { FriendAccounts } from "./friend-accounts.ts";
 import { parseRowEdit, rowWarnings, type LedgerRow } from "./ledger.ts";
 import { editLedgerRow, proposeLedger, type ProposeLedgerError, type StoredLedger } from "./ledger-service.ts";
 import { createLedgerStore } from "./ledger-store.ts";
@@ -9,7 +10,10 @@ import { createLyricsStore } from "./lyrics-store.ts";
 import { ODE_STEPS, parseRunId, type OdeFailure, type OdeStep, type RunId } from "./ode-run.ts";
 import { createOdeMaker, type OdeStatus, type StartOdeError } from "./ode-service.ts";
 import { createOdeStore } from "./ode-store.ts";
+import { createPaymentStore } from "./payment-store.ts";
+import { createPayments, type CaptureError, type CreateOrderError, type FriendStanding } from "./payments.ts";
 import { parseLineEdit, parseLineNumber, type LineSlot, type LyricLine, type Lyrics, type NoSuchLine } from "./lyrics.ts";
+import type { Section } from "./ode.ts";
 import type { OdeWorkflow, Ports, Sql } from "./ports.ts";
 import { ok, type Result } from "./result.ts";
 import * as TripNotes from "./trip-notes.ts";
@@ -105,7 +109,28 @@ function stepsJson(current: OdeStep) {
   return ODE_STEPS.map((name, index) => ({ name, state: index < at ? "done" : index === at ? "active" : "waiting" }));
 }
 
-function odeJson(status: OdeStatus) {
+function standingJson(standing: FriendStanding) {
+  const { amountOwedCents, amountRepaidCents, linesUnlocked, nextLineAtCents, canPay } = standing;
+  return { amountOwedCents, amountRepaidCents, linesUnlocked, nextLineAtCents, canPay };
+}
+
+/**
+ * The Ode's sections for the payer's page: each verse says which of its lines are still locked and where its friend
+ * stands. A friend with no standing has every line locked.
+ */
+function sectionsJson(sections: readonly Section[], standings: readonly FriendStanding[]) {
+  return sections.map((section) => {
+    if (section.kind !== "verse") return section;
+    const standing = standings.find((candidate) => candidate.friend === section.friend);
+    return {
+      ...section,
+      lines: section.lines.map((line, index) => ({ ...line, locked: index >= (standing?.linesUnlocked ?? 0) })),
+      payment: standing === undefined ? null : standingJson(standing),
+    };
+  });
+}
+
+function odeJson(status: OdeStatus, standings: readonly FriendStanding[]) {
   switch (status._tag) {
     case "NotMade":
       return { status: "none" };
@@ -114,7 +139,39 @@ function odeJson(status: OdeStatus) {
     case "Failed":
       return { status: "failed", error: makeFailureMessage(status.failure) };
     case "Ready":
-      return { status: "ready", durationMs: status.ode.durationMs, audioUrl: "/api/ode/audio", sections: status.ode.sections };
+      return { status: "ready", durationMs: status.ode.durationMs, audioUrl: "/api/ode/audio", sections: sectionsJson(status.ode.sections, standings) };
+  }
+}
+
+function orderFailure(error: CreateOrderError): { status: 404 | 422 | 502; message: string } {
+  switch (error._tag) {
+    case "UnknownFriend":
+      return { status: 404, message: error.message };
+    case "NothingOwed":
+    case "FullyRepaid":
+    case "InvalidPayment":
+    case "AmountTooHigh":
+    case "NoPayPalAccount":
+      return { status: 422, message: error.message };
+    case "PayPalUnavailable":
+      // The payer gets a retry message; the operator needs the cause.
+      console.error(`creating the PayPal order failed (${error._tag}):`, error);
+      return { status: 502, message: "Couldn't reach PayPal just now. Try again in a moment." };
+  }
+}
+
+function captureFailure(error: CaptureError): { status: 402 | 422 | 502; message: string } {
+  switch (error._tag) {
+    case "PaymentDeclined":
+      return { status: 402, message: error.message };
+    case "NotAFriendsOrder":
+    case "NothingOwed":
+    case "FullyRepaid":
+    case "AmountTooHigh":
+      return { status: 422, message: error.message };
+    case "PayPalUnavailable":
+      console.error(`capturing the PayPal order failed (${error._tag}):`, error);
+      return { status: 502, message: "Couldn't reach PayPal just now. Try again in a moment." };
   }
 }
 
@@ -130,22 +187,28 @@ function newRunId(): RunId {
  * The HTTP API: the one seam the tests and the browser both use.
  *
  * @param deps - The database, the external-service ports the API calls itself (Eleven Music is called only by
- *   the Workflow task), and the Workflow that makes the Ode.
+ *   the Workflow task), the Workflow that makes the Ode, the PayPal account that pays each friend, and the PayPal
+ *   client ID the page loads PayPal's buttons with (undefined when none is configured).
  * @returns A Hono app serving `/api/*`.
  */
 export function createApi({
   sql,
   ports,
   workflow,
+  friendAccounts,
+  paypalClientId,
 }: {
   sql: Sql;
   ports: Pick<Ports, "clock" | "claude" | "paypal">;
   workflow: OdeWorkflow;
+  friendAccounts: FriendAccounts;
+  paypalClientId: string | undefined;
 }): Hono {
   const api = new Hono();
   const store = createLedgerStore(sql);
   const lyricsStore = createLyricsStore(sql);
   const odeStore = createOdeStore(sql);
+  const payments = createPayments({ ledger: store, store: createPaymentStore(sql), paypal: ports.paypal, accounts: friendAccounts });
   const odeMaker = createOdeMaker({ clock: ports.clock, ledger: store, lyrics: lyricsStore, odes: odeStore, runs: odeStore, workflow, newRunId });
 
   api.get("/api/health", (c) => c.json({ ok: true, now: ports.clock.now().toISOString() }));
@@ -205,7 +268,7 @@ export function createApi({
   api.patch("/api/lyrics/hook", (c) => editLine(c, ok({ _tag: "hook" })));
   api.patch("/api/lyrics/chorus", (c) => editLine(c, ok({ _tag: "chorus" })));
 
-  api.get("/api/ode", async (c) => c.json(odeJson(await odeMaker.status())));
+  api.get("/api/ode", async (c) => c.json(odeJson(await odeMaker.status(), await payments.standings())));
 
   api.post("/api/ode", async (c) => {
     const started = await odeMaker.start();
@@ -213,7 +276,34 @@ export function createApi({
       const { status, message } = startFailure(started.error);
       return c.json({ error: message }, status);
     }
-    return c.json(odeJson(started.value), 202);
+    return c.json(odeJson(started.value, await payments.standings()), 202);
+  });
+
+  // The client ID is public by design: PayPal's page script needs it. Null means the page offers its keyless Pay button.
+  api.get("/api/config", (c) => c.json({ paypalClientId: paypalClientId ?? null }));
+
+  api.post("/api/payments/orders", async (c) => {
+    const body: unknown = await c.req.json().catch(() => undefined);
+    const friend = field(body, "friend");
+    const order = await payments.createOrder(typeof friend === "string" ? friend : "", field(body, "amountCents"));
+    if (order._tag === "err") {
+      const { status, message } = orderFailure(order.error);
+      return c.json({ error: message }, status);
+    }
+    return c.json({ orderId: order.value });
+  });
+
+  api.post("/api/payments/capture", async (c) => {
+    const body: unknown = await c.req.json().catch(() => undefined);
+    const orderId = field(body, "orderId");
+    if (typeof orderId !== "string" || orderId === "") return c.json({ error: "Send the orderId PayPal gave you." }, 422);
+
+    const paid = await payments.capture(orderId);
+    if (paid._tag === "err") {
+      const { status, message } = captureFailure(paid.error);
+      return c.json({ error: message }, status);
+    }
+    return c.json({ friend: paid.value.friend, ...standingJson(paid.value) });
   });
 
   api.get("/api/ode/audio", async (c) => {

@@ -1,9 +1,11 @@
 import { PGlite } from "@electric-sql/pglite";
 import { createApi } from "../src/server/app.ts";
+import { friendAccounts } from "../src/server/friend-accounts.ts";
 import { createOdeJob } from "../src/server/ode-job.ts";
 import type { Claude, ElevenMusic, Sql } from "../src/server/ports.ts";
 import { migrate } from "../src/server/schema.ts";
 import { fakePorts, fakeWorkflow } from "../src/testing/fakes.ts";
+import { seedFriendAccounts } from "./seed.ts";
 
 // PGlite takes ~5 s to boot, so each test file boots one and every harness
 // resets it. Tests within a file run sequentially, so sharing is safe.
@@ -32,7 +34,7 @@ export async function createHarness(canned: { claude?: Claude; music?: ElevenMus
 
   /** A web service process: a new API over the same database and Workflow, as after a deploy or a crash. */
   function webService() {
-    const api = createApi({ sql, ports, workflow });
+    const api = createApi({ sql, ports, workflow, friendAccounts: friendAccounts(seedFriendAccounts), paypalClientId: undefined });
     return {
       request: (path: string, init?: RequestInit) => api.request(path, init),
       get: (path: string) => api.request(path),

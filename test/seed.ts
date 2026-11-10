@@ -66,3 +66,10 @@ export const seedLyrics = {
   hook: "Oh we were there, we were there, together on the road",
   chorus: "Here is to the friends who carried the whole trip home",
 };
+
+/** The PayPal sandbox account each friend is paid through (`notes/day1-checks.md`). */
+export const seedFriendAccounts: Readonly<Record<string, string>> = {
+  Tharun: "tharunbandaru18@gmail.com",
+  Vikram: "vikram_vickey10@outlook.com",
+  Sahiti: "sahitishastrula1402@gmail.com",
+};

@@ -1,4 +1,4 @@
-import { ClaudeUnavailable, MusicUnavailable, type Claude, type ElevenMusic, type PayPal } from "./ports.ts";
+import { ClaudeUnavailable, MusicUnavailable, PayPalUnavailable, type Claude, type ElevenMusic, type PayPal } from "./ports.ts";
 import { err } from "./result.ts";
 
 function unwired(service: string) {
@@ -18,9 +18,12 @@ export const unwiredMusic: ElevenMusic = {
   compose: async () => err(new MusicUnavailable("ELEVENLABS_API_KEY is not set")),
 };
 
+const PAYPAL_NOT_SET = "PAYPAL_CLIENT_ID and PAYPAL_CLIENT_SECRET are not set";
+
+/** Stands in for PayPal when no credentials are configured: every order call reports it unavailable. */
 export const unwiredPayPal: PayPal = {
-  createOrder: unwired("PayPal"),
-  captureOrder: unwired("PayPal"),
-  getOrder: unwired("PayPal"),
+  createOrder: async () => err(new PayPalUnavailable(PAYPAL_NOT_SET)),
+  captureOrder: async () => err(new PayPalUnavailable(PAYPAL_NOT_SET)),
+  getOrder: async () => err(new PayPalUnavailable(PAYPAL_NOT_SET)),
   verifyWebhook: unwired("PayPal"),
 };

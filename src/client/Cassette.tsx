@@ -1,16 +1,18 @@
-import { useRef, useState, type ReactElement } from "react";
+import { useEffect, useRef, useState, type ReactElement } from "react";
+import { PayFriend, type ClientId, type Payment } from "./PayFriend.tsx";
 
-/** One lyric line and the stretch of the song it is sung in. */
+/** One lyric line and the stretch of the song it is sung in; `locked` until the friend's repayments reach its 25% step. */
 interface TimedLine {
   text: string;
   startMs: number;
   endMs: number;
+  locked: boolean;
 }
 
 /** A part of the Ode as the API lists it, in song order. */
 type Section =
   | { kind: "intro"; startMs: number; endMs: number }
-  | { kind: "verse"; friend: string; startMs: number; endMs: number; lines: TimedLine[] }
+  | { kind: "verse"; friend: string; startMs: number; endMs: number; lines: TimedLine[]; payment: Payment | null }
   | { kind: "hook" | "chorus"; text: string; startMs: number; endMs: number };
 
 /** A made Ode, ready to play. */
@@ -20,12 +22,32 @@ export interface ReadyOde {
   sections: Section[];
 }
 
-function Row({ label, text, span, now, onPlay }: { label?: string; text: string; span: { startMs: number; endMs: number }; now: number; onPlay: (ms: number) => void }) {
+/** A locked line's audio is cut to what a lowpass at this frequency lets through: words stay hidden, the beat doesn't. */
+const MUFFLED_HZ = 300;
+const CLEAR_HZ = 20_000;
+
+function Row({
+  label,
+  text,
+  span,
+  locked = false,
+  now,
+  onPlay,
+}: {
+  label?: string;
+  text: string;
+  span: { startMs: number; endMs: number };
+  locked?: boolean;
+  now: number;
+  onPlay: (ms: number) => void;
+}) {
   const current = now >= span.startMs && now < span.endMs;
   return (
     <button
       onClick={() => onPlay(span.startMs)}
       aria-current={current}
+      aria-label={locked ? "Locked line" : undefined}
+      title={locked ? "Locked until this friend is paid back far enough" : undefined}
       style={{
         display: "block",
         width: "100%",
@@ -40,18 +62,72 @@ function Row({ label, text, span, now, onPlay }: { label?: string; text: string;
       }}
     >
       {label !== undefined && <span style={{ color: "#555", marginRight: "0.5rem" }}>{label}</span>}
-      {text}
+      <span style={locked ? { filter: "blur(5px)", userSelect: "none" } : undefined}>{text}</span>
     </button>
   );
 }
 
 /**
- * The cassette page: play the made Ode and follow the line being sung. Every line is clear here;
- * locking lines comes with payments. A line is a button that jumps to where it is sung.
+ * The cassette page: play the made Ode and follow the line being sung. A locked line is blurred and its audio is
+ * muffled; hooks always play clear. A line is a button that jumps to where it is sung, and each verse has the
+ * controls to pay its friend.
+ *
+ * @param props - The Ode with each line's lock, and what to do after a payment so the page shows the new locks.
  */
-export function Cassette({ ode }: { ode: ReadyOde }): ReactElement {
+export function Cassette({ ode, onPaid }: { ode: ReadyOde; onPaid: () => void }): ReactElement {
   const audio = useRef<HTMLAudioElement>(null);
+  const filter = useRef<{ context: AudioContext; lowpass: BiquadFilterNode } | null>(null);
+  const frame = useRef(0);
   const [now, setNow] = useState(0);
+  const [clientId, setClientId] = useState<ClientId>(undefined);
+
+  // The locked stretches of the song, read by the muffling loop on every frame.
+  const lockedWindows = useRef<{ startMs: number; endMs: number }[]>([]);
+  lockedWindows.current = ode.sections.flatMap((section) => (section.kind === "verse" ? section.lines.filter((line) => line.locked) : []));
+
+  useEffect(() => {
+    fetch("/api/config")
+      .then((res) => (res.ok ? res.json() : Promise.reject(new Error(String(res.status)))))
+      .then((config: { paypalClientId: string | null }) => setClientId(config.paypalClientId))
+      // Without the config the page cannot tell which way to pay; the keyless button is the safe offer, since the server decides what is paid.
+      .catch(() => setClientId(null));
+  }, []);
+
+  /** Route the audio through a lowpass, created on first play because browsers only start audio on a gesture. */
+  function lowpass(): { context: AudioContext; lowpass: BiquadFilterNode } | null {
+    const element = audio.current;
+    if (element === null) return null;
+    if (filter.current === null) {
+      const context = new AudioContext();
+      const node = context.createBiquadFilter();
+      node.type = "lowpass";
+      node.frequency.value = CLEAR_HZ;
+      context.createMediaElementSource(element).connect(node).connect(context.destination);
+      filter.current = { context, lowpass: node };
+    }
+    return filter.current;
+  }
+
+  function muffle() {
+    const element = audio.current;
+    const chain = filter.current;
+    if (element === null || chain === null) return;
+    const ms = element.currentTime * 1000;
+    const locked = lockedWindows.current.some((line) => ms >= line.startMs && ms < line.endMs);
+    chain.lowpass.frequency.setTargetAtTime(locked ? MUFFLED_HZ : CLEAR_HZ, chain.context.currentTime, 0.02);
+  }
+
+  function follow() {
+    muffle();
+    frame.current = requestAnimationFrame(follow);
+  }
+
+  function stopFollowing() {
+    cancelAnimationFrame(frame.current);
+    muffle();
+  }
+
+  useEffect(() => () => cancelAnimationFrame(frame.current), []);
 
   function play(ms: number) {
     const element = audio.current;
@@ -69,6 +145,14 @@ export function Cassette({ ode }: { ode: ReadyOde }): ReactElement {
           controls
           preload="metadata"
           src={ode.audioUrl}
+          onPlay={() => {
+            void lowpass()?.context.resume();
+            cancelAnimationFrame(frame.current);
+            follow();
+          }}
+          onPause={stopFollowing}
+          onEnded={stopFollowing}
+          onSeeked={muffle}
           onTimeUpdate={(event) => setNow(event.currentTarget.currentTime * 1000)}
           style={{ width: "100%" }}
         />
@@ -81,8 +165,9 @@ export function Cassette({ ode }: { ode: ReadyOde }): ReactElement {
               return (
                 <div key={key} style={{ marginTop: "0.75rem" }}>
                   <strong>{section.friend}</strong>
+                  {section.payment !== null && <PayFriend friend={section.friend} payment={section.payment} clientId={clientId} onPaid={onPaid} />}
                   {section.lines.map((line, lineIndex) => (
-                    <Row key={lineIndex} text={line.text} span={line} now={now} onPlay={play} />
+                    <Row key={lineIndex} text={line.text} span={line} locked={line.locked} now={now} onPlay={play} />
                   ))}
                 </div>
               );

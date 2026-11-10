@@ -2,8 +2,9 @@ import { PGlite } from "@electric-sql/pglite";
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
-import { seedExtraction, seedLyrics } from "../../test/seed.ts";
+import { seedExtraction, seedFriendAccounts, seedLyrics } from "../../test/seed.ts";
 import { createApi } from "../server/app.ts";
+import { friendAccounts } from "../server/friend-accounts.ts";
 import { createOdeJob } from "../server/ode-job.ts";
 import type { Sql } from "../server/ports.ts";
 import { migrate } from "../server/schema.ts";
@@ -38,7 +39,13 @@ const claude = fakeClaudeByTask({
 });
 const music = fakeMusic();
 const ports = { ...fakePorts(), claude, music };
-const api = createApi({ sql, ports, workflow: fakeWorkflow(createOdeJob({ sql, claude, music })) });
+const api = createApi({
+  sql,
+  ports,
+  workflow: fakeWorkflow(createOdeJob({ sql, claude, music })),
+  friendAccounts: friendAccounts(seedFriendAccounts),
+  paypalClientId: undefined,
+});
 
 const app = new Hono();
 app.route("/", api);

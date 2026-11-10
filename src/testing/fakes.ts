@@ -5,6 +5,7 @@ import type { OdeRunOutcome } from "../server/ode-pipeline.ts";
 import { parseWorkflowRunId, type RunId, type WorkflowRunId } from "../server/ode-run.ts";
 import {
   MusicUnavailable,
+  PayPalUnavailable,
   WorkflowUnavailable,
   type Claude,
   type Clock,
@@ -15,7 +16,7 @@ import {
   type PayPalOrder,
   type Ports,
 } from "../server/ports.ts";
-import { err, ok } from "../server/result.ts";
+import { err, ok, type Result } from "../server/result.ts";
 
 export interface FakeClock extends Clock {
   set(date: Date): void;
@@ -270,38 +271,68 @@ export function fakeWorkflow(job: OdeJob): FakeWorkflow {
 export interface FakePayPal extends PayPal {
   /** The next capture is declined instead of completed. */
   declineNextCapture(): void;
+  /** The next call of any kind fails with `PayPalUnavailable`. */
+  failNextRequest(): void;
+  /** What a sandbox account has been sent by completed captures, in cents. */
+  receivedBy(email: string): number;
+  /** How many orders have been created. */
+  orderCount(): number;
 }
 
+/** A fake PayPal: orders are remembered, and a completed capture credits the order's payee in full. */
 export function fakePayPal(): FakePayPal {
   const orders = new Map<string, PayPalOrder>();
+  const captured = new Set<string>();
+  const received = new Map<string, number>();
   let sequence = 0;
   let decline = false;
+  let fail = false;
 
-  const find = (orderId: string): PayPalOrder => {
+  /** Fails once when asked to; otherwise runs `answer`. */
+  const unlessFailing = <T>(answer: () => Result<T, PayPalUnavailable>): Result<T, PayPalUnavailable> => {
+    if (!fail) return answer();
+    fail = false;
+    return err(new PayPalUnavailable("fake PayPal is down"));
+  };
+
+  const find = (orderId: string): Result<PayPalOrder, PayPalUnavailable> => {
     const order = orders.get(orderId);
-    if (!order) throw new Error(`fake PayPal has no order ${orderId}`);
-    return order;
+    return order === undefined ? err(new PayPalUnavailable(`fake PayPal has no order ${orderId}`)) : ok(order);
   };
 
   return {
     declineNextCapture() {
       decline = true;
     },
-    async createOrder({ friendEmail, amountCents }) {
-      const order = { orderId: `ORDER-${++sequence}`, friendEmail, amountCents };
-      orders.set(order.orderId, order);
-      return order;
+    failNextRequest() {
+      fail = true;
     },
-    async captureOrder(orderId): Promise<PayPalCapture> {
-      const order = find(orderId);
-      if (decline) {
-        decline = false;
-        return { status: "DECLINED", orderId };
-      }
-      return { status: "COMPLETED", orderId, captureId: `CAPTURE-${orderId}`, amountCents: order.amountCents };
+    receivedBy: (email) => received.get(email) ?? 0,
+    orderCount: () => orders.size,
+    async createOrder({ friendEmail, amountCents }) {
+      return unlessFailing(() => {
+        const order = { orderId: `ORDER-${++sequence}`, friendEmail, amountCents };
+        orders.set(order.orderId, order);
+        return ok(order);
+      });
+    },
+    async captureOrder(orderId) {
+      return unlessFailing((): Result<PayPalCapture, PayPalUnavailable> => {
+        const order = find(orderId);
+        if (order._tag === "err") return order;
+        if (decline) {
+          decline = false;
+          return ok({ status: "DECLINED", orderId });
+        }
+        // The same order captured again is the same capture, as PayPal reports it.
+        const captureId = `CAPTURE-${orderId}`;
+        received.set(order.value.friendEmail, (received.get(order.value.friendEmail) ?? 0) + (captured.has(captureId) ? 0 : order.value.amountCents));
+        captured.add(captureId);
+        return ok({ status: "COMPLETED", orderId, captureId, amountCents: order.value.amountCents });
+      });
     },
     async getOrder(orderId) {
-      return find(orderId);
+      return unlessFailing(() => find(orderId));
     },
     async verifyWebhook({ headers }) {
       return headers["paypal-transmission-sig"] === "valid";

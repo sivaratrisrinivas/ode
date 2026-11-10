@@ -18,6 +18,16 @@ services:
           property: connectionString
       - key: ANTHROPIC_API_KEY
         sync: false
+      # PayPal sandbox app (developer.paypal.com -> Apps & Credentials). The client ID is public: the page loads PayPal's buttons with it.
+      - key: PAYPAL_CLIENT_ID
+        sync: false
+      - key: PAYPAL_CLIENT_SECRET
+        sync: false
+      - key: PAYPAL_ENV
+        value: sandbox
+      # Name=email pairs: the sandbox Personal account that pays each friend (see .env.example).
+      - key: FRIEND_PAYPAL_ACCOUNTS
+        sync: false
       # Starts and polls the Workflow's task runs. Create it at dashboard.render.com/u/settings (API Keys).
       - key: RENDER_API_KEY
         sync: false

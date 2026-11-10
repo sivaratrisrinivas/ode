@@ -5,7 +5,7 @@ over in-process Postgres, with the test fakes for Claude and Eleven Music (`src/
 Open http://localhost:3000 (`PORT` changes it). State is in memory and ends with the process.
 
 - `FAKE_FLAGGED=1 npm run dev:fake`: Claude writes one lyric line with an amount no rewrite fixes, so the page shows a flagged line.
-- The page flow: paste any notes, "Build the ledger", "Write the lyrics", "Make the Ode".
+- The page flow: paste any notes, "Build the ledger", "Write the lyrics", "Make the Ode", then pay a friend. With no PayPal client ID the page shows a plain "Pay <friend>" button instead of PayPal's popup; the server runs the same create, read-back and capture against a fake PayPal.
 - To drive it headless, use `playwright-core` with the Chromium in `~/.cache/ms-playwright`.
 
-`npm run dev:server` is the real thing and needs `DATABASE_URL`, `ANTHROPIC_API_KEY` and `ELEVENLABS_API_KEY` (see `.env.example`).
+`npm run dev:server` is the real thing and needs `DATABASE_URL`, `ANTHROPIC_API_KEY` and `ELEVENLABS_API_KEY`, plus `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET` and `FRIEND_PAYPAL_ACCOUNTS` to pay friends (see `.env.example`).

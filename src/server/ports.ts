@@ -101,21 +101,38 @@ export interface OdeWorkflow {
   status(run: WorkflowRunId): Promise<Result<WorkflowRunState, WorkflowUnavailable>>;
 }
 
+/** PayPal could not answer: network, credentials, an order it does not know or a reply this service cannot read. */
+export class PayPalUnavailable extends Error {
+  /** Identifies this error in a union. */
+  readonly _tag = "PayPalUnavailable" as const;
+
+  /** @param cause - What went wrong: a network error, an API error reply or a parse problem. */
+  constructor(cause: unknown) {
+    super("PayPal is unavailable", { cause });
+  }
+}
+
+/** A PayPal order: the amount the payer is asked to approve, and the sandbox account it pays. */
 export interface PayPalOrder {
   orderId: string;
+  /** The payee, as PayPal reads it back. */
   friendEmail: string;
   amountCents: number;
 }
 
+/** How capturing an order ended. `amountCents` is gross, before PayPal's fee. */
 export type PayPalCapture =
   | { status: "COMPLETED"; orderId: string; captureId: string; amountCents: number }
   | { status: "DECLINED"; orderId: string };
 
+/** PayPal Orders v2: one order per payment, paid to a different payee each time. */
 export interface PayPal {
-  createOrder(request: { friendEmail: string; amountCents: number }): Promise<PayPalOrder>;
-  captureOrder(orderId: string): Promise<PayPalCapture>;
+  /** Create an order paying `friendEmail` `amountCents` once the payer approves it. */
+  createOrder(request: { friendEmail: string; amountCents: number }): Promise<Result<PayPalOrder, PayPalUnavailable>>;
+  /** Take the money for an order the payer approved. A declined payment is a value, not an error. */
+  captureOrder(orderId: string): Promise<Result<PayPalCapture, PayPalUnavailable>>;
   /** The capture response lacks the payee, so it is confirmed by reading the order back. */
-  getOrder(orderId: string): Promise<PayPalOrder>;
+  getOrder(orderId: string): Promise<Result<PayPalOrder, PayPalUnavailable>>;
   verifyWebhook(request: { headers: Record<string, string>; body: string }): Promise<boolean>;
 }
 
