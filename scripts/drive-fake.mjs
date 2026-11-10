@@ -48,6 +48,11 @@ try {
   await page.screenshot({ path: screenshot });
   await friend.screenshot({ path: `friend-${screenshot}` });
   console.log("play() asked to start at (s):", await page.evaluate(() => window.__plays));
+
+  // Building the ledger again ends every friend's link; the open tab must stop showing the Ode, not keep it stale.
+  await page.request.post(`http://localhost:${port}/api/ledger`, { data: { notes: "Trip notes: Tharun paid for the car, 390 dollars, split four ways." } });
+  await friend.getByText(/link doesn.t work any more/).waitFor({ timeout: 15_000 });
+  console.log("friend after the ledger was rebuilt:", await friend.locator("main").innerText());
 } finally {
   await browser.close();
 }

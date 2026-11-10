@@ -14,6 +14,8 @@ Use the gh CLI from this repo.
 - Remove labels: gh issue edit <number> --remove-label "..."
 - Close: gh issue close <number> --comment "..."
 
+Spec #20 is about 36 KB. Read it with `gh api repos/sivaratrisrinivas/ode/issues/20 --jq .body | grep -n -i <topic>`, or the sections your ticket cites, not whole.
+
 Use files with actual newlines for multiline bodies.
 The CLI infers the repository from the Git remote.
 

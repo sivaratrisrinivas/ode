@@ -14,8 +14,8 @@ Open http://localhost:3000 (`PORT` changes it). State is in memory and ends with
     args: ["--autoplay-policy=no-user-gesture-required"],
   });
   ```
-  Building a ledger over an existing one asks `window.confirm`; a fresh `dev:fake` process has none.
-- `node scripts/drive-fake.mjs [shot.png]` runs that whole flow against a running `dev:fake` (`PORT`), opens Tharun's friend link in a second tab (`/f/<token>`, shown under his name on the payer's page) and pays Tharun $50, printing how long his open tab took to show the unlock. The fake Ode's audio is junk bytes, so nothing is audible; the script records each `play()` request and where it started instead.
+  Building a ledger over an existing one asks `window.confirm`; a fresh `dev:fake` process has none. A second tab needs `browser.newContext()` then `context.newPage()`; `browser.newPage()` forbids `context.newPage()`.
+- `node scripts/drive-fake.mjs [shot.png]` runs that whole flow against a running `dev:fake` (`PORT`), opens Tharun's friend link in a second tab (`/f/<token>`, shown under his name on the payer's page) and pays Tharun $50, printing how long his open tab took to show the unlock (that includes the payer's order and capture requests, so 300 to 2400 ms on a loaded machine; the API test measures from the end of the payment), then rebuilds the ledger and checks his tab says the link no longer works. The fake Ode's audio is junk bytes, so nothing is audible; the script records each `play()` request and where it started instead.
 - Stop it with `kill $(lsof -ti :$PORT)`. A hook blocks `pkill -f` and `pgrep -f`, which match the shell running them.
 - `npm test` takes 2 to 7 minutes: run it in the background. Every run writes its failures to `.vitest/last.json`.
 
