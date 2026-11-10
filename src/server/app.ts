@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { Hono, type Context } from "hono";
 import { parseByteRange } from "./byte-range.ts";
 import type { FriendAccounts } from "./friend-accounts.ts";
+import { eventStream, friendViewJson, friendViewPath, linkOwner, withLocks, type UnknownLink } from "./friend-view.ts";
 import { parseRowEdit, rowWarnings, type LedgerRow } from "./ledger.ts";
 import { editLedgerRow, proposeLedger, type ProposeLedgerError, type StoredLedger } from "./ledger-service.ts";
 import { createLedgerStore } from "./ledger-store.ts";
@@ -23,17 +24,19 @@ function field(body: unknown, name: string): unknown {
   return typeof body === "object" && body !== null ? Reflect.get(body, name) : undefined;
 }
 
-function rowJson(row: LedgerRow) {
+/** A ledger row for the payer, with the friend's private page to share. */
+function rowJson(row: LedgerRow, tokens: ReadonlyMap<string, string>) {
   return {
     friend: row.friend,
     amountOwedCents: row.amountOwedCents,
     insideJoke: row.insideJoke,
     warnings: rowWarnings(row),
+    friendViewPath: friendViewPath(tokens.get(row.friend)),
   };
 }
 
-function ledgerJson(ledger: StoredLedger) {
-  return { notes: ledger.notes, warnings: ledger.warnings, rows: ledger.rows.map(rowJson) };
+function ledgerJson(ledger: StoredLedger, tokens: ReadonlyMap<string, string>) {
+  return { notes: ledger.notes, warnings: ledger.warnings, rows: ledger.rows.map((row) => rowJson(row, tokens)) };
 }
 
 function lineJson(line: LyricLine) {
@@ -119,19 +122,21 @@ function standingJson(standing: FriendStanding) {
  * The Ode's sections for the payer's page: each verse says which of its lines are still locked and where its friend
  * stands. A friend with no standing has every line locked.
  */
-function sectionsJson(sections: readonly Section[], standings: readonly FriendStanding[]) {
+function sectionsJson(sections: readonly Section[], standings: readonly FriendStanding[], tokens: ReadonlyMap<string, string>) {
   return sections.map((section) => {
     if (section.kind !== "verse") return section;
     const standing = standings.find((candidate) => candidate.friend === section.friend);
     return {
       ...section,
-      lines: section.lines.map((line, index) => ({ ...line, locked: index >= (standing?.linesUnlocked ?? 0) })),
+      lines: withLocks(section.lines, standing),
       payment: standing === undefined ? null : standingJson(standing),
+      friendViewPath: friendViewPath(tokens.get(section.friend)),
     };
   });
 }
 
-function odeJson(status: OdeStatus, standings: readonly FriendStanding[]) {
+/** The Ode's status as JSON; `sections` decides what each reader sees of a ready Ode, so the payer's and a friend's pages share the rest. */
+function odeJson(status: OdeStatus, sections: (sections: readonly Section[]) => unknown) {
   switch (status._tag) {
     case "NotMade":
       return { status: "none" };
@@ -140,7 +145,7 @@ function odeJson(status: OdeStatus, standings: readonly FriendStanding[]) {
     case "Failed":
       return { status: "failed", error: makeFailureMessage(status.failure) };
     case "Ready":
-      return { status: "ready", durationMs: status.ode.durationMs, audioUrl: "/api/ode/audio", sections: sectionsJson(status.ode.sections, standings) };
+      return { status: "ready", durationMs: status.ode.durationMs, audioUrl: "/api/ode/audio", sections: sections(status.ode.sections) };
   }
 }
 
@@ -214,7 +219,7 @@ export function createApi({
 
   api.get("/api/health", (c) => c.json({ ok: true, now: ports.clock.now().toISOString() }));
 
-  api.get("/api/ledger", async (c) => c.json(ledgerJson(await store.read())));
+  api.get("/api/ledger", async (c) => c.json(ledgerJson(await store.read(), await store.linkTokens())));
 
   api.post("/api/ledger", async (c) => {
     const body: unknown = await c.req.json().catch(() => undefined);
@@ -226,7 +231,7 @@ export function createApi({
       const { status, message } = proposeFailure(result.error);
       return c.json({ error: message }, status);
     }
-    return c.json(ledgerJson(result.value));
+    return c.json(ledgerJson(result.value, await store.linkTokens()));
   });
 
   api.patch("/api/ledger/:friend", async (c) => {
@@ -236,7 +241,7 @@ export function createApi({
 
     const row = await editLedgerRow(store, c.req.param("friend"), edit.value);
     if (row._tag === "err") return c.json({ error: row.error.message }, 404);
-    return c.json(rowJson(row.value));
+    return c.json(rowJson(row.value, await store.linkTokens()));
   });
 
   api.get("/api/lyrics", async (c) => c.json(lyricsJson(await lyricsStore.read())));
@@ -269,7 +274,13 @@ export function createApi({
   api.patch("/api/lyrics/hook", (c) => editLine(c, ok({ _tag: "hook" })));
   api.patch("/api/lyrics/chorus", (c) => editLine(c, ok({ _tag: "chorus" })));
 
-  api.get("/api/ode", async (c) => c.json(odeJson(await odeMaker.status(), await payments.standings())));
+  /** The Ode as the payer's page sees it: each verse with its friend's standing and private link. */
+  async function payerOde(status: OdeStatus) {
+    const [standings, tokens] = await Promise.all([payments.standings(), store.linkTokens()]);
+    return odeJson(status, (sections) => sectionsJson(sections, standings, tokens));
+  }
+
+  api.get("/api/ode", async (c) => c.json(await payerOde(await odeMaker.status())));
 
   api.post("/api/ode", async (c) => {
     const started = await odeMaker.start();
@@ -277,7 +288,7 @@ export function createApi({
       const { status, message } = startFailure(started.error);
       return c.json({ error: message }, status);
     }
-    return c.json(odeJson(started.value, await payments.standings()), 202);
+    return c.json(await payerOde(started.value), 202);
   });
 
   // The client ID is public by design: PayPal's page script needs it. Null means the page offers its keyless Pay button.
@@ -326,6 +337,27 @@ export function createApi({
       return c.json({ error: "Couldn't reach PayPal just now." }, 502);
     }
     return c.json({ ok: true });
+  });
+
+  /** What a friend's page shows right now, or `UnknownLink` when the token is nobody's. */
+  async function friendView(token: string): Promise<Result<ReturnType<typeof friendViewJson>, UnknownLink>> {
+    const friend = linkOwner(await store.friendForToken(token));
+    if (friend._tag === "err") return friend;
+    const [status, standings] = await Promise.all([odeMaker.status(), payments.standings()]);
+    return ok(friendViewJson(friend.value, standings, (sections) => odeJson(status, sections)));
+  }
+
+  api.get("/api/friends/:token", async (c) => {
+    const view = await friendView(c.req.param("token"));
+    return view._tag === "err" ? c.json({ error: view.error.message }, 404) : c.json(view.value);
+  });
+
+  // Server-sent events: the whole view on connect and again whenever it changes, so a view that reconnects after a
+  // drop is current without asking for anything.
+  api.get("/api/friends/:token/events", async (c) => {
+    const token = c.req.param("token");
+    const first = await friendView(token);
+    return first._tag === "err" ? c.json({ error: first.error.message }, 404) : eventStream(first.value, () => friendView(token));
   });
 
   api.get("/api/ode/audio", async (c) => {

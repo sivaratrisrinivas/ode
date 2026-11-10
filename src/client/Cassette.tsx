@@ -9,10 +9,21 @@ interface TimedLine {
   locked: boolean;
 }
 
+/** A friend's verse as the payer's API lists it; `friendViewPath` is the friend's private page. */
+export interface VerseSection {
+  kind: "verse";
+  friend: string;
+  startMs: number;
+  endMs: number;
+  lines: TimedLine[];
+  payment: Payment | null;
+  friendViewPath?: string;
+}
+
 /** A part of the Ode as the API lists it, in song order. */
-type Section =
+export type Section =
   | { kind: "intro"; startMs: number; endMs: number }
-  | { kind: "verse"; friend: string; startMs: number; endMs: number; lines: TimedLine[]; payment: Payment | null }
+  | VerseSection
   | { kind: "hook" | "chorus"; text: string; startMs: number; endMs: number };
 
 /** A made Ode, ready to play. */
@@ -117,9 +128,10 @@ function Row({
  * controls to pay its friend. When a new Ode arrives with lines that were locked now clear, the page announces
  * the unlock, flares those lines and plays the first of them.
  *
- * @param props - The Ode with each line's lock, and what to do after a payment so the page shows the new locks.
+ * @param props - The Ode with each line's lock, and what to do after a payment so the page shows the new locks; without
+ *   `onPaid` (a friend's page) there are no controls to pay, and no verse shows a friend's link.
  */
-export function Cassette({ ode, onPaid }: { ode: ReadyOde; onPaid: () => void }): ReactElement {
+export function Cassette({ ode, onPaid, title = "Your Ode" }: { ode: ReadyOde; onPaid?: () => void; title?: string }): ReactElement {
   const audio = useRef<HTMLAudioElement>(null);
   const filter = useRef<{ context: AudioContext; lowpass: BiquadFilterNode } | null>(null);
   const frame = useRef(0);
@@ -210,7 +222,7 @@ export function Cassette({ ode, onPaid }: { ode: ReadyOde; onPaid: () => void })
   return (
     <section>
       <style>{UNLOCK_CSS}</style>
-      <h2>Your Ode</h2>
+      <h2>{title}</h2>
       {unlocked.length > 0 && (
         <div
           role="status"
@@ -254,7 +266,12 @@ export function Cassette({ ode, onPaid }: { ode: ReadyOde; onPaid: () => void })
               return (
                 <div key={key} style={{ marginTop: "0.75rem" }}>
                   <strong>{section.friend}</strong>
-                  {section.payment !== null && <PayFriend friend={section.friend} payment={section.payment} clientId={clientId} onPaid={onPaid} />}
+                  {onPaid !== undefined && section.friendViewPath !== undefined && (
+                    <p style={{ margin: "0.25rem 0" }}>
+                      <a href={section.friendViewPath}>{section.friend}’s private link</a>
+                    </p>
+                  )}
+                  {onPaid !== undefined && section.payment !== null && <PayFriend friend={section.friend} payment={section.payment} clientId={clientId} onPaid={onPaid} />}
                   {section.lines.map((line, lineIndex) => (
                     <Row
                       key={lineIndex}

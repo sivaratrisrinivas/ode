@@ -113,4 +113,10 @@ export async function migrate(sql: Sql): Promise<void> {
   );
   // The order a capture belongs to, so a capture response that follows the webhook for the same order is known for what it is.
   await sql.query("alter table payments add column if not exists order_id text");
+  // Each friend's private link: two random UUIDs, 244 bits, so a link cannot be guessed. Rows that predate the column get
+  // theirs here, since a volatile default is evaluated once per row.
+  await sql.query(
+    `alter table ledger_friends add column if not exists link_token text not null unique
+       default replace(gen_random_uuid()::text || gen_random_uuid()::text, '-', '')`,
+  );
 }

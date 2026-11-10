@@ -18,6 +18,9 @@ function toRow(record: FriendRecord): LedgerRow {
   };
 }
 
+/** What the schema generates for a link token: two UUIDs' hex digits. */
+const LINK_TOKEN = /^[0-9a-f]{64}$/;
+
 const selectFriends = "select friend, amount_owed_cents, amount_status, inside_joke from ledger_friends order by position";
 
 /**
@@ -70,6 +73,18 @@ export function createLedgerStore(sql: Sql): LedgerStore {
         [friend, fields.amountOwedCents ?? null, fields.amountStatus ?? null, fields.insideJoke ?? null],
       );
       return rows[0] === undefined ? undefined : toRow(rows[0]);
+    },
+
+    async linkTokens() {
+      const { rows } = await sql.query<{ friend: string; link_token: string }>("select friend, link_token from ledger_friends");
+      return new Map(rows.map((row) => [row.friend, row.link_token]));
+    },
+
+    async friendForToken(token) {
+      // A malformed token holds nobody, and a stray NUL byte would make the database refuse the query.
+      if (!LINK_TOKEN.test(token)) return undefined;
+      const { rows } = await sql.query<{ friend: string }>("select friend from ledger_friends where link_token = $1", [token]);
+      return rows[0]?.friend;
     },
   };
 }
