@@ -513,6 +513,7 @@ describe("making the Ode", () => {
       const { post, patch, get } = await lyricsHarness(music);
       await patch("/api/lyrics/verses/Vikram/lines/3", { text: "Key lime pie for nine dollars" });
       await patch("/api/lyrics/hook", { text: "We ate at Chipotle, we were there" });
+      await patch("/api/lyrics/chorus", { text: "Sing Hotel California to the friends" });
 
       const refused = await post("/api/ode", {});
 
@@ -520,8 +521,25 @@ describe("making the Ode", () => {
       const { error } = await json<{ error: string }>(refused);
       expect(error).toContain("Vikram's line 3");
       expect(error).toContain("the hook");
-      expect(error).not.toContain("chorus");
+      expect(error).toContain("the chorus");
+      expect(error).not.toContain("Tharun");
+      expect(error).not.toContain("Sahiti");
       expect(await json<OdeBody>(await get("/api/ode"))).toEqual({ status: "none" });
+      expect(spy.composed).toBe(0);
+    });
+
+    it("fails a run, composing nothing, when a line is flagged after the run started but before it read the lyrics", async () => {
+      const { music, spy } = countingMusic();
+      const { post, patch, get, workflow } = await lyricsHarness(music);
+      const instanceStarts = workflow.holdNextRun();
+      expect((await post("/api/ode", {})).status).toBe(202);
+
+      await patch("/api/lyrics/hook", { text: "We ate at Chipotle, we were there" });
+      instanceStarts();
+      const outcomes = await workflow.whenRunsEnd(1);
+
+      expect(outcomes).toEqual(["failed"]);
+      expect(await json<OdeBody>(await get("/api/ode"))).toEqual({ status: "failed", error: expect.stringMatching(/flagged/) });
       expect(spy.composed).toBe(0);
     });
 

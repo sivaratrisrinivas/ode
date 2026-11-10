@@ -90,20 +90,23 @@ function flaggedCount(lyrics: Lyrics): number {
 /**
  * The lyrics preview: write the lyrics from the ledger, read them, and edit any line.
  *
- * @param onFlagged - Called with how many lines are flagged, each time the lyrics are loaded or change.
+ * @param onFlagged - Called with how many lines are flagged, each time the lyrics are loaded or change; null once the preview is gone.
  */
-export function LyricsPreview({ onFlagged }: { onFlagged: (count: number) => void }) {
+export function LyricsPreview({ onFlagged }: { onFlagged: (count: number | null) => void }) {
   const [load, setLoad] = useState<Load>({ status: "loading" });
   const [writing, setWriting] = useState(false);
   const [writeError, setWriteError] = useState<string | null>(null);
   // Bumped whenever all lyrics are replaced, so line fields restart from the server's text.
   const [generation, setGeneration] = useState(0);
 
-  // Report the flagged count, and zero once this preview goes away so a stale count never blocks the button.
+  // Report the flagged count once known. When the lyrics cannot load the count is unknown, so report none and
+  // leave the server to refuse: the button must not stay disabled for lyrics that cannot be seen.
   useEffect(() => {
     if (load.status === "ready") onFlagged(flaggedCount(load.lyrics));
+    else if (load.status === "error") onFlagged(0);
   }, [load]);
-  useEffect(() => () => onFlagged(0), []);
+  // Once this preview goes away its count is stale: the button waits for the next preview to report.
+  useEffect(() => () => onFlagged(null), []);
 
   useEffect(() => {
     fetch("/api/lyrics")
