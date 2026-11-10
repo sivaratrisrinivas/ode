@@ -54,6 +54,51 @@ export class LedgerNotReady extends Error {
   readonly _tag = "LedgerNotReady" as const;
 }
 
+/** Some lyric lines are flagged, so the Ode must not be composed from them. */
+export class LyricsFlagged extends Error {
+  /** Identifies this error in a union. */
+  readonly _tag = "LyricsFlagged" as const;
+
+  /** The flagged lines, in song order. */
+  readonly slots: readonly LineSlot[];
+
+  /** @param slots - The flagged lines, in song order; the message names each for the payer. */
+  constructor(slots: readonly LineSlot[]) {
+    super(`Fix the flagged lines in the lyrics before making the Ode: ${slots.map(describeSlot).join(", ")}.`);
+    this.slots = slots;
+  }
+}
+
+function describeSlot(slot: LineSlot): string {
+  switch (slot._tag) {
+    case "verse":
+      return `${slot.friend}'s line ${slot.line}`;
+    case "hook":
+      return "the hook";
+    case "chorus":
+      return "the chorus";
+  }
+}
+
+/**
+ * Check that no line is flagged: the Ode never sings an amount, a brand or a song title.
+ *
+ * @param lyrics - The saved lyrics.
+ * @returns The lyrics, or `LyricsFlagged` naming every flagged line.
+ */
+export function requireUnflagged(lyrics: Lyrics): Result<Lyrics, LyricsFlagged> {
+  const flagged: LineSlot[] = [];
+  for (const verse of lyrics.verses) {
+    verse.lines.forEach((line, index) => {
+      // SAFETY: a verse has LINES_PER_VERSE lines, so index + 1 is 1 to 4.
+      if (line.problems.length > 0) flagged.push({ _tag: "verse", friend: verse.friend, line: (index + 1) as LineNumber });
+    });
+  }
+  if (lyrics.hook.problems.length > 0) flagged.push({ _tag: "hook" });
+  if (lyrics.chorus.problems.length > 0) flagged.push({ _tag: "chorus" });
+  return flagged.length === 0 ? ok(lyrics) : err(new LyricsFlagged(flagged));
+}
+
 /** Claude's lyrics did not have the shape the schema promised. */
 export class MalformedLyrics extends Error {
   readonly _tag = "MalformedLyrics" as const;

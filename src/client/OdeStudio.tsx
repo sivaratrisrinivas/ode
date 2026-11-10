@@ -46,6 +46,8 @@ function Steps({ steps }: { steps: Step[] }) {
 export function OdeStudio(): ReactElement {
   const [load, setLoad] = useState<Load>({ status: "loading" });
   const [startError, setStartError] = useState<string | null>(null);
+  // Lines flagged in the lyrics preview; the Ode is not made while any is.
+  const [flagged, setFlagged] = useState(0);
 
   async function refresh() {
     // A failed poll mid-run is not the end of the run: keep the steps on screen and ask again.
@@ -103,7 +105,7 @@ export function OdeStudio(): ReactElement {
   return (
     <>
       {/* The lyrics are read when the run starts, so they are not editable while it runs. */}
-      {load.status !== "making" && <LyricsPreview />}
+      {load.status !== "making" && <LyricsPreview onFlagged={setFlagged} />}
       <section>
         <h2>Make the Ode</h2>
         {load.status === "making" ? (
@@ -111,7 +113,14 @@ export function OdeStudio(): ReactElement {
         ) : (
           <>
             {load.status === "failed" && <p role="alert" style={{ color: "#b00020" }}>{load.error}</p>}
-            <button onClick={() => void make()}>{load.status === "failed" ? "Try again" : "Make the Ode"}</button>
+            <button onClick={() => void make()} disabled={flagged > 0} aria-describedby={flagged > 0 ? "flagged-why" : undefined}>
+              {load.status === "failed" ? "Try again" : "Make the Ode"}
+            </button>
+            {flagged > 0 && (
+              <p id="flagged-why">
+                {flagged === 1 ? "One lyric line is flagged" : `${flagged} lyric lines are flagged`}. Fix {flagged === 1 ? "it" : "them"} in the lyrics above to make the Ode.
+              </p>
+            )}
           </>
         )}
         {startError !== null && <p role="alert" style={{ color: "#b00020" }}>{startError}</p>}

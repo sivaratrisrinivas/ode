@@ -81,13 +81,29 @@ function LineField({ label, line, target, onSaved }: { label: string; line: Line
   );
 }
 
-/** The lyrics preview: write the lyrics from the ledger, read them, and edit any line. */
-export function LyricsPreview() {
+/** How many lines are flagged: the number "Make the Ode" waits on. */
+function flaggedCount(lyrics: Lyrics): number {
+  const lines = [...lyrics.verses.flatMap((verse) => verse.lines), ...(lyrics.hook ? [lyrics.hook] : []), ...(lyrics.chorus ? [lyrics.chorus] : [])];
+  return lines.filter((line) => line.problems.length > 0).length;
+}
+
+/**
+ * The lyrics preview: write the lyrics from the ledger, read them, and edit any line.
+ *
+ * @param onFlagged - Called with how many lines are flagged, each time the lyrics are loaded or change.
+ */
+export function LyricsPreview({ onFlagged }: { onFlagged: (count: number) => void }) {
   const [load, setLoad] = useState<Load>({ status: "loading" });
   const [writing, setWriting] = useState(false);
   const [writeError, setWriteError] = useState<string | null>(null);
   // Bumped whenever all lyrics are replaced, so line fields restart from the server's text.
   const [generation, setGeneration] = useState(0);
+
+  // Report the flagged count, and zero once this preview goes away so a stale count never blocks the button.
+  useEffect(() => {
+    if (load.status === "ready") onFlagged(flaggedCount(load.lyrics));
+  }, [load]);
+  useEffect(() => () => onFlagged(0), []);
 
   useEffect(() => {
     fetch("/api/lyrics")

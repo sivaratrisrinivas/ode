@@ -75,6 +75,8 @@ function makeFailureMessage(failure: OdeFailure): string {
     case "ClaudeUnavailable":
     case "MalformedLyrics":
       return "Couldn't write your lyrics just now. Try again in a moment.";
+    case "LyricsFlagged":
+      return "Some lyric lines are flagged, so nothing was composed. Fix them in the lyrics preview, then make the Ode.";
     case "MusicUnavailable":
       return "Couldn't compose your Ode just now. Try again in a moment.";
     case "OdeRunCrashed":
@@ -86,6 +88,7 @@ function makeFailureMessage(failure: OdeFailure): string {
 function startFailure(error: StartOdeError): { status: 409 | 422 | 502; message: string } {
   switch (error._tag) {
     case "LedgerNotReady":
+    case "LyricsFlagged":
       return { status: 422, message: error.message };
     case "OdeAlreadyMade":
       return { status: 409, message: error.message };
@@ -143,7 +146,7 @@ export function createApi({
   const store = createLedgerStore(sql);
   const lyricsStore = createLyricsStore(sql);
   const odeStore = createOdeStore(sql);
-  const odeMaker = createOdeMaker({ clock: ports.clock, ledger: store, odes: odeStore, runs: odeStore, workflow, newRunId });
+  const odeMaker = createOdeMaker({ clock: ports.clock, ledger: store, lyrics: lyricsStore, odes: odeStore, runs: odeStore, workflow, newRunId });
 
   api.get("/api/health", (c) => c.json({ ok: true, now: ports.clock.now().toISOString() }));
 

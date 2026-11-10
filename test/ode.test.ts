@@ -494,6 +494,104 @@ describe("making the Ode", () => {
     });
   });
 
+  describe("when a lyric line is flagged", () => {
+    /** A music fake that counts the songs it is asked to compose. */
+    function countingMusic() {
+      const inner = fakeMusic();
+      const spy = { composed: 0 };
+      const music: ElevenMusic = {
+        compose: async (chunks) => {
+          spy.composed += 1;
+          return inner.compose(chunks);
+        },
+      };
+      return { music, spy };
+    }
+
+    it("refuses to make the Ode, naming each flagged line, and starts and composes nothing", async () => {
+      const { music, spy } = countingMusic();
+      const { post, patch, get } = await lyricsHarness(music);
+      await patch("/api/lyrics/verses/Vikram/lines/3", { text: "Key lime pie for nine dollars" });
+      await patch("/api/lyrics/hook", { text: "We ate at Chipotle, we were there" });
+
+      const refused = await post("/api/ode", {});
+
+      expect(refused.status).toBe(422);
+      const { error } = await json<{ error: string }>(refused);
+      expect(error).toContain("Vikram's line 3");
+      expect(error).toContain("the hook");
+      expect(error).not.toContain("chorus");
+      expect(await json<OdeBody>(await get("/api/ode"))).toEqual({ status: "none" });
+      expect(spy.composed).toBe(0);
+    });
+
+    it("still answers 409 for an Ode already made, and the running status for a run in progress, whatever the lyrics say", async () => {
+      const { post, patch, get } = await lyricsHarness();
+      await post("/api/ode", {});
+      expectReady(await settledOde(get));
+      await patch("/api/lyrics/hook", { text: "We ate at Chipotle, we were there" });
+
+      expect((await post("/api/ode", {})).status).toBe(409);
+    });
+
+    it("makes the Ode once the payer has fixed every flagged line", async () => {
+      const { music, spy } = countingMusic();
+      const { post, patch, get } = await lyricsHarness(music);
+      await patch("/api/lyrics/verses/Vikram/lines/3", { text: "Key lime pie for nine dollars" });
+      await patch("/api/lyrics/chorus", { text: "Sing Hotel California to the friends" });
+      expect((await post("/api/ode", {})).status).toBe(422);
+
+      await patch("/api/lyrics/verses/Vikram/lines/3", { text: "Key lime pie at nine under the lights" });
+      expect((await post("/api/ode", {})).status).toBe(422);
+      await patch("/api/lyrics/chorus", { text: "Here is to the friends who carried the trip" });
+      const started = await post("/api/ode", {});
+      const ode = expectReady(await settledOde(get));
+
+      expect(started.status).toBe(202);
+      expect(verses(ode)[1]?.lines[2]?.text).toBe("Key lime pie at nine under the lights");
+      expect(spy.composed).toBe(1);
+    });
+
+    it("stops a run that wrote a still-flagged line before composing, keeps the lyrics with their flags, and lets the payer fix and retry", async () => {
+      const { music, spy } = countingMusic();
+      const flagged = "Sahiti screamed at the gator for ninety bucks";
+      const written = structuredClone(seedLyrics);
+      written.friends[2]?.lines.splice(0, 1, flagged);
+      const harness = await createHarness({
+        music,
+        claude: fakeClaudeByTask({
+          "extract-ledger": () => seedExtraction,
+          "write-lyrics": () => written,
+          // The one rewrite is no better, so the line stays flagged.
+          "rewrite-line": () => ({ line: "Sahiti screamed at the gator for fifty bucks" }),
+        }),
+      });
+      await harness.post("/api/ledger", { notes: seedNotes });
+
+      const started = await harness.post("/api/ode", {});
+      const failed = await settledOde(harness.get);
+
+      expect(started.status).toBe(202);
+      expect(failed).toEqual({ status: "failed", error: expect.stringContaining("lyrics") });
+      expect(failed.status === "failed" && failed.error).toMatch(/flagged/i);
+      expect(spy.composed).toBe(0);
+      expect((await harness.get("/api/ode/audio")).status).toBe(404);
+      const lyrics = await json<{ verses: { lines: { text: string; problems: string[] }[] }[] }>(await harness.get("/api/lyrics"));
+      expect(lyrics.verses).toHaveLength(3);
+      expect(lyrics.verses[2]?.lines[0]).toEqual({
+        text: "Sahiti screamed at the gator for fifty bucks",
+        problems: [expect.stringContaining("amount")],
+      });
+
+      // The saved lyrics are flagged now, so a retry is refused until the payer fixes the line.
+      expect((await harness.post("/api/ode", {})).status).toBe(422);
+      await harness.patch("/api/lyrics/verses/Sahiti/lines/1", { text: "Sahiti screamed at the gator and laughed" });
+      expect((await harness.post("/api/ode", {})).status).toBe(202);
+      expect((await settledOde(harness.get)).status).toBe("ready");
+      expect(spy.composed).toBe(1);
+    });
+  });
+
   it("writes the lyrics first, as its first step, when none have been written", async () => {
     const harness = await createHarness({
       claude: fakeClaudeByTask({ "extract-ledger": () => seedExtraction, "write-lyrics": () => seedLyrics }),

@@ -74,6 +74,8 @@ export type OdeFailure =
         | "ClaudeUnavailable"
         | "MalformedLyrics"
         | "MusicUnavailable"
+        /** The lyrics the run used still have a flagged line. */
+        | "LyricsFlagged"
         /** Something unexpected, not a known failure, stopped the run. */
         | "OdeRunCrashed"
         /** The run ended, or never reached the Workflow, without saying so. */

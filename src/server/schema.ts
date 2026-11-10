@@ -1,5 +1,8 @@
 import type { Sql } from "./ports.ts";
 
+/** The `OdeFailure` tags a run row may hold, as a SQL list. */
+const RUN_FAILURES = "('LedgerNotReady', 'ClaudeUnavailable', 'MalformedLyrics', 'MusicUnavailable', 'LyricsFlagged', 'OdeRunCrashed', 'OdeRunLost')";
+
 /** Creates tables if missing; idempotent, so it is safe on every boot. */
 export async function migrate(sql: Sql): Promise<void> {
   // The walking skeleton (#21) kept one hard-coded row here. #22 replaced it with the
@@ -63,12 +66,17 @@ export async function migrate(sql: Sql): Promise<void> {
        started_at timestamptz not null,
        workflow_run_id text check (workflow_run_id <> ''),
        failure text check (failure in
-         ('LedgerNotReady', 'ClaudeUnavailable', 'MalformedLyrics', 'MusicUnavailable', 'OdeRunCrashed', 'OdeRunLost')),
+         ${RUN_FAILURES}),
        failure_message text,
        check (failure is not null or failure_message is null),
        check ((failure = 'LedgerNotReady') = (failure_message is not null) or failure is null)
      )`,
   );
+  // Tables made before #36 do not allow the 'LyricsFlagged' failure; replace their check.
+  await sql.transaction(async (tx) => {
+    await tx.query("alter table ode_runs drop constraint if exists ode_runs_failure_check");
+    await tx.query(`alter table ode_runs add constraint ode_runs_failure_check check (failure in ${RUN_FAILURES})`);
+  });
   await sql.query(
     `create table if not exists ode_sections (
        position integer primary key,

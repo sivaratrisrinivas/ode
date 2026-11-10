@@ -1,5 +1,6 @@
 import type { LedgerStore } from "./ledger-service.ts";
-import { lyricFriends, type LedgerNotReady } from "./lyrics.ts";
+import { lyricFriends, requireUnflagged, type LedgerNotReady, type LyricsFlagged } from "./lyrics.ts";
+import type { LyricsStore } from "./lyrics-service.ts";
 import type { Ode } from "./ode.ts";
 import type { MakingRun, OdeFailure, OdeRun, OdeStep, RunId, WorkflowRunId } from "./ode-run.ts";
 import type { Clock, OdeWorkflow, WorkflowUnavailable } from "./ports.ts";
@@ -64,7 +65,7 @@ export class OdeAlreadyMade extends Error {
 }
 
 /** Why a run could not be started. */
-export type StartOdeError = LedgerNotReady | OdeAlreadyMade | WorkflowUnavailable;
+export type StartOdeError = LedgerNotReady | LyricsFlagged | OdeAlreadyMade | WorkflowUnavailable;
 
 /** The run in progress. */
 export interface MakingOde {
@@ -111,11 +112,12 @@ const MAX_RUN_MS = 10 * 60_000;
  * Create the Ode maker. It keeps no state of its own: the run lives in the database and the Workflow, so any
  * web service process can start the run, poll it, or pick it up after a restart.
  *
- * @param deps - The clock, the ledger, the Ode and run stores, the Workflow, and how run IDs are chosen.
+ * @param deps - The clock, the ledger, the lyrics, the Ode and run stores, the Workflow, and how run IDs are chosen.
  */
 export function createOdeMaker(deps: {
   clock: Clock;
   ledger: Pick<LedgerStore, "read">;
+  lyrics: Pick<LyricsStore, "read">;
   odes: Pick<OdeStore, "read">;
   runs: OdeRuns;
   workflow: OdeWorkflow;
@@ -166,6 +168,15 @@ export function createOdeMaker(deps: {
   async function start(): Promise<Result<OdeStatus, StartOdeError>> {
     const friends = lyricFriends(await deps.ledger.read());
     if (friends._tag === "err") return err(friends.error);
+    // An Ode already made, or a run in progress, is answered as before whatever the lyrics now say.
+    const seen = await status();
+    if (seen._tag === "Ready") return err(new OdeAlreadyMade());
+    if (seen._tag === "Making") return ok(seen);
+
+    // Saved lyrics with a flagged line are refused here. With none saved, the run writes them and checks them itself.
+    const saved = await deps.lyrics.read();
+    const unflagged = saved === undefined ? undefined : requireUnflagged(saved);
+    if (unflagged?._tag === "err") return err(unflagged.error);
 
     // One statement checks that there is no Ode and no run in progress, and records this run, so two requests (or a
     // request and a run that is just saving) cannot both start a paid song.

@@ -1,5 +1,6 @@
 import type { LedgerStore } from "./ledger-service.ts";
 import { writeLyrics, type LyricsStore, type WriteLyricsError } from "./lyrics-service.ts";
+import { requireUnflagged, type LyricsFlagged } from "./lyrics.ts";
 import { buildOde, planOde } from "./ode.ts";
 import type { OdeFailure, RunId } from "./ode-run.ts";
 import type { OdeRuns, OdeStore } from "./ode-service.ts";
@@ -18,7 +19,7 @@ export class OdeRunCrashed extends Error {
 }
 
 /** Why a run that started did not produce an Ode. */
-export type MakeOdeError = WriteLyricsError | MusicUnavailable | OdeRunCrashed;
+export type MakeOdeError = WriteLyricsError | LyricsFlagged | MusicUnavailable | OdeRunCrashed;
 
 /**
  * How a run ended: the Ode is saved, the run failed and said so, or it was no longer the run in
@@ -49,6 +50,9 @@ async function produce(deps: OdePipelineDeps, run: RunId): Promise<Result<"ready
   const lyrics =
     saved !== undefined ? ok(saved) : await writeLyrics({ claude: deps.claude, ledger: deps.ledger, store: deps.lyrics });
   if (lyrics._tag === "err") return err(lyrics.error);
+  // Flagged lines are not sung. The lyrics stay saved, flags and all, so the payer can fix them in the preview.
+  const unflagged = requireUnflagged(lyrics.value);
+  if (unflagged._tag === "err") return err(unflagged.error);
 
   // Each step is recorded before its work starts, and a run the web service has given up on stops before spending a song.
   if (!(await deps.runs.advance(run, "composing"))) return ok("superseded");
