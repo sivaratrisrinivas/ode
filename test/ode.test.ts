@@ -80,6 +80,48 @@ async function lyricsHarness(music?: ElevenMusic) {
   return harness;
 }
 
+/** A music port that holds the song back until `release()`, and counts the songs asked for. */
+function heldMusic() {
+  let release = () => {};
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const inner = fakeMusic();
+  let asked = 0;
+  const music: ElevenMusic = {
+    compose: async (chunks) => {
+      asked += 1;
+      await gate;
+      return inner.compose(chunks);
+    },
+  };
+  return { music, release, asked: () => asked };
+}
+
+/** A gate a test opens when the run it holds may go on. */
+function openable() {
+  let open = () => {};
+  const opened = new Promise<void>((resolve) => {
+    open = resolve;
+  });
+  return { opened, open };
+}
+
+/** The status once the run is composing, so its first step is done. */
+function composingOde(get: (path: string) => Response | Promise<Response>): Promise<OdeBody> {
+  return pollUntil(
+    async () => json<OdeBody>(await get("/api/ode")),
+    (ode) => ode.status !== "making" || ode.steps.some((step) => step.name === "composing" && step.state === "active"),
+  );
+}
+
+/** The status steps a payer sees while the Ode is made, each as done, active or waiting. */
+const steps = (writing: string, composing: string, finding: string) => [
+  { name: "writing", state: writing },
+  { name: "composing", state: composing },
+  { name: "finding-lines", state: finding },
+];
+
 describe("making the Ode", () => {
   it("composes an intro, one verse per friend each followed by a hook, and a chorus, back to back", async () => {
     const { post, get } = await lyricsHarness();
@@ -199,30 +241,6 @@ describe("making the Ode", () => {
   });
 
   describe("while the Ode is being made", () => {
-    /** A music port that holds the song back until `release()`, and counts the songs asked for. */
-    function heldMusic() {
-      let release = () => {};
-      const gate = new Promise<void>((resolve) => {
-        release = resolve;
-      });
-      const inner = fakeMusic();
-      let asked = 0;
-      const music: ElevenMusic = {
-        compose: async (chunks) => {
-          asked += 1;
-          await gate;
-          return inner.compose(chunks);
-        },
-      };
-      return { music, release, asked: () => asked };
-    }
-
-    const steps = (writing: string, composing: string, finding: string) => [
-      { name: "writing", state: writing },
-      { name: "composing", state: composing },
-      { name: "finding-lines", state: finding },
-    ];
-
     it("shows the status steps: writing, composing, finding every line", async () => {
       const { music, release } = heldMusic();
       const { post, get } = await lyricsHarness(music);
@@ -237,6 +255,39 @@ describe("making the Ode", () => {
       expect(composing).toEqual({ status: "making", steps: steps("done", "active", "waiting") });
       release();
       expect((await settledOde(get)).status).toBe("ready");
+    });
+
+    it("keeps showing the run and its steps after the web service restarts, and shows the Ode when the run ends", async () => {
+      const { music, release } = heldMusic();
+      const harness = await lyricsHarness(music);
+      await harness.post("/api/ode", {});
+      await pollUntil(
+        async () => json<OdeBody>(await harness.get("/api/ode")),
+        (ode) => ode.status === "making" && ode.steps.some((step) => step.name === "composing" && step.state === "active"),
+      );
+
+      const restarted = harness.restartWebService();
+      const afterRestart = await json<OdeBody>(await restarted.get("/api/ode"));
+      release();
+      const ode = expectReady(await settledOde(restarted.get));
+
+      expect(afterRestart).toEqual({ status: "making", steps: steps("done", "active", "waiting") });
+      expect(ode.sections).toHaveLength(8);
+    });
+
+    it("does not start a second run, or spend a second song, when the restarted web service is asked again", async () => {
+      const { music, release, asked } = heldMusic();
+      const harness = await lyricsHarness(music);
+      await harness.post("/api/ode", {});
+
+      const restarted = harness.restartWebService();
+      const again = await restarted.post("/api/ode", {});
+      release();
+      await settledOde(restarted.get);
+
+      expect(again.status).toBe(202);
+      expect((await json<OdeBody>(again)).status).toBe("making");
+      expect(asked()).toBe(1);
     });
 
     it("does not start a second run, or spend a second song, when asked again", async () => {
@@ -278,6 +329,168 @@ describe("making the Ode", () => {
 
       expect(settled.status).toBe("failed");
       expect((await get("/api/ode/audio")).status).toBe(404);
+    });
+  });
+
+  describe("when the Workflow run does not finish", () => {
+    it("asks the payer to try again, leaves no Ode, and makes the Ode on retry, when the run dies without saying why", async () => {
+      const { post, get, workflow } = await lyricsHarness();
+      workflow.loseNextRun();
+
+      const started = await post("/api/ode", {});
+      const failed = await settledOde(get);
+
+      expect(started.status).toBe(202);
+      expect(failed).toEqual({ status: "failed", error: expect.stringContaining("Try again") });
+      expect((await get("/api/ode/audio")).status).toBe(404);
+
+      const retried = await post("/api/ode", {});
+      const ode = expectReady(await settledOde(get));
+
+      expect(retried.status).toBe(202);
+      expect(ode.sections).toHaveLength(8);
+    });
+
+    it("asks the payer to try again, and starts nothing, when the Workflow cannot be reached", async () => {
+      const { post, get, workflow } = await lyricsHarness();
+      workflow.refuseNextStart();
+
+      const refused = await post("/api/ode", {});
+
+      expect(refused.status).toBe(502);
+      expect((await json<{ error: string }>(refused)).error).toContain("Try again");
+      expect(await json<OdeBody>(await get("/api/ode"))).toEqual({ status: "none" });
+
+      await post("/api/ode", {});
+      expect((await settledOde(get)).status).toBe("ready");
+    });
+
+    it("does not let a run the web service gave up on save an Ode while the payer's retry is still running", async () => {
+      const inner = fakeMusic();
+      const gates = [openable(), openable()];
+      let composed = 0;
+      const music: ElevenMusic = {
+        compose: async (chunks) => {
+          await gates[composed++]?.opened;
+          return inner.compose(chunks);
+        },
+      };
+      const { post, get, workflow } = await lyricsHarness(music);
+      const songsAskedFor = (count: number) =>
+        pollUntil(
+          async () => composed,
+          (asked) => asked === count,
+        );
+      await post("/api/ode", {});
+      await songsAskedFor(1);
+
+      // The Workflow reports the first run ended, though its instance carries on composing.
+      workflow.reportStartedRunsFailed();
+      const gaveUp = await json<OdeBody>(await get("/api/ode"));
+      await post("/api/ode", {});
+      await songsAskedFor(2);
+      gates[0]?.open();
+      const afterFirst = await workflow.whenRunsEnd(1);
+      const whileRetrying = await json<OdeBody>(await get("/api/ode"));
+      gates[1]?.open();
+      const ode = expectReady(await settledOde(get));
+
+      expect(gaveUp).toEqual({ status: "failed", error: expect.stringContaining("Try again") });
+      expect(afterFirst).toEqual(["superseded"]);
+      expect(whileRetrying).toEqual({ status: "making", steps: steps("done", "active", "waiting") });
+      expect(await workflow.whenRunsEnd(2)).toEqual(["superseded", "ready"]);
+      expect(ode.sections).toHaveLength(8);
+    });
+
+    it("tells the payer what to fix when the ledger changed before the Workflow run could read it", async () => {
+      let extraction: unknown = seedExtraction;
+      const { post, get, workflow } = await createHarness({
+        claude: fakeClaudeByTask({ "extract-ledger": () => extraction, "write-lyrics": () => seedLyrics }),
+      });
+      await post("/api/ledger", { notes: seedNotes });
+      const instanceStarts = workflow.holdNextRun();
+      await post("/api/ode", {});
+
+      // New notes with no amount replace the ledger while the Workflow's instance is still starting up.
+      extraction = {
+        friends: [{ name: "Vikram", amountOwedCents: null, amountIsEstimate: false, insideJoke: "The pier at nine" }],
+        groupCosts: [],
+      };
+      await post("/api/ledger", { notes: "vikram" });
+      instanceStarts();
+      const failed = await settledOde(get);
+
+      expect(failed).toEqual({ status: "failed", error: expect.stringContaining("No amount found for Vikram") });
+      expect((await get("/api/ode/audio")).status).toBe(404);
+    });
+
+    it("lets the payer try again once the run has waited half a minute for a Workflow the web service never reached", async () => {
+      const harness = await lyricsHarness();
+      harness.workflow.hangNextStart();
+      void harness.post("/api/ode", {});
+      await pollUntil(
+        async () => json<OdeBody>(await harness.get("/api/ode")),
+        (ode) => ode.status === "making",
+      );
+
+      const restarted = harness.restartWebService();
+      harness.clock.advance(10_000);
+      const waiting = await json<OdeBody>(await restarted.get("/api/ode"));
+      harness.clock.advance(21_000);
+      const failed = await json<OdeBody>(await restarted.get("/api/ode"));
+
+      expect(waiting).toEqual({ status: "making", steps: steps("active", "waiting", "waiting") });
+      expect(failed).toEqual({ status: "failed", error: expect.stringContaining("Try again") });
+
+      await restarted.post("/api/ode", {});
+      expect((await settledOde(restarted.get)).status).toBe("ready");
+    });
+
+    it("stops waiting after ten minutes, and saves nothing later, for a run the Workflow can no longer report on", async () => {
+      const { music, release } = heldMusic();
+      const harness = await lyricsHarness(music);
+      await harness.post("/api/ode", {});
+      await composingOde(harness.get);
+
+      // For example the API key was revoked, so every question to Render is refused.
+      harness.workflow.refuseStatusChecks();
+      harness.clock.advance(5 * 60_000);
+      const waiting = await json<OdeBody>(await harness.get("/api/ode"));
+      harness.clock.advance(6 * 60_000);
+      const failed = await json<OdeBody>(await harness.get("/api/ode"));
+      release();
+      const outcomes = await harness.workflow.whenRunsEnd(1);
+
+      expect(waiting).toEqual({ status: "making", steps: steps("done", "active", "waiting") });
+      expect(failed).toEqual({ status: "failed", error: expect.stringContaining("Try again") });
+      expect(outcomes).toEqual(["superseded"]);
+      expect((await harness.get("/api/ode/audio")).status).toBe(404);
+    });
+
+    it("does nothing, and spends no lyrics, when the Workflow starts a run the web service has already given up on", async () => {
+      let lyricsWritten = 0;
+      const { post, get, workflow } = await createHarness({
+        claude: fakeClaudeByTask({
+          "extract-ledger": () => seedExtraction,
+          "write-lyrics": () => {
+            lyricsWritten += 1;
+            return seedLyrics;
+          },
+        }),
+      });
+      await post("/api/ledger", { notes: seedNotes });
+      const instanceStarts = workflow.holdNextRun();
+      await post("/api/ode", {});
+
+      workflow.reportStartedRunsFailed();
+      const gaveUp = await json<OdeBody>(await get("/api/ode"));
+      instanceStarts();
+      const outcomes = await workflow.whenRunsEnd(1);
+
+      expect(gaveUp).toEqual({ status: "failed", error: expect.stringContaining("Try again") });
+      expect(outcomes).toEqual(["superseded"]);
+      expect(lyricsWritten).toBe(0);
+      expect(await json<OdeBody>(await get("/api/ode"))).toEqual(gaveUp);
     });
   });
 

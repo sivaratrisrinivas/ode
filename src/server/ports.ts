@@ -1,4 +1,5 @@
 import type { ChunkPlan, WordTiming } from "./ode.ts";
+import type { RunId, WorkflowRunId } from "./ode-run.ts";
 import type { Result } from "./result.ts";
 
 /** Runs queries; the same shape for a pool, a transaction and PGlite. */
@@ -64,6 +65,40 @@ export class MusicUnavailable extends Error {
  */
 export interface ElevenMusic {
   compose(chunks: readonly ChunkPlan[]): Promise<Result<ComposedSong, MusicUnavailable>>;
+}
+
+/** The Workflow could not be reached or did not answer as expected: network, credentials, an unknown task or an unreadable reply. */
+export class WorkflowUnavailable extends Error {
+  /** Identifies this error in a union. */
+  readonly _tag = "WorkflowUnavailable" as const;
+
+  /** @param cause - What went wrong: a network error, an API error reply or a status this service does not know. */
+  constructor(cause: unknown) {
+    super("The Workflow is unavailable", { cause });
+  }
+}
+
+/** Where the Workflow says a run is: still going, or ended in the way named. */
+export type WorkflowRunState = "active" | "completed" | "failed" | "canceled";
+
+/**
+ * The Workflow that runs the song pipeline as one task (lyrics, compose, line windows, store) away from the web service.
+ * The task tells the payer how far it got through the database, not through this port: this port only starts a run
+ * and says whether it is still going, so a run that died can be told from one that is slow.
+ */
+export interface OdeWorkflow {
+  /**
+   * Start the task for `run`. Starting the same run again does not start a second task.
+   *
+   * @returns The Workflow's record of the run, or why it could not be started.
+   */
+  start(run: RunId): Promise<Result<WorkflowRunId, WorkflowUnavailable>>;
+  /**
+   * Ask the Workflow how a run it started is doing.
+   *
+   * @returns Where the run is, or why the Workflow could not say.
+   */
+  status(run: WorkflowRunId): Promise<Result<WorkflowRunState, WorkflowUnavailable>>;
 }
 
 export interface PayPalOrder {

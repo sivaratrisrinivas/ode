@@ -18,5 +18,34 @@ services:
           property: connectionString
       - key: ANTHROPIC_API_KEY
         sync: false
+      # Starts and polls the Workflow's task runs. Create it at dashboard.render.com/u/settings (API Keys).
+      - key: RENDER_API_KEY
+        sync: false
+      # The Workflow's slug; the web service starts the task `<slug>/make-ode`.
+      - key: ODE_WORKFLOW_SLUG
+        fromService:
+          type: workflow
+          name: ode-workflow
+          property: slug
+
+  # The song pipeline (lyrics, compose, line windows, store) runs here as one task, `make-ode`, which the web
+  # service starts and polls. Task runs must be in the database's region to reach it over the private network;
+  # the database and the web service above use Render's default, oregon.
+  - type: workflow
+    name: ode-workflow
+    runtime: node
+    region: oregon
+    buildCommand: npm ci
+    startCommand: node src/workflow/index.ts
+    envVars:
+      # The entry point runs TypeScript directly, which needs Node 24 (also in .node-version).
+      - key: NODE_VERSION
+        value: "24"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: ode-db
+          property: connectionString
+      - key: ANTHROPIC_API_KEY
+        sync: false
       - key: ELEVENLABS_API_KEY
         sync: false

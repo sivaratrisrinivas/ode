@@ -1,5 +1,6 @@
-import type { OdeStore } from "./ode-service.ts";
+import type { OdeRuns, OdeStore } from "./ode-service.ts";
 import { makeOde, type Ode, type Section, type TimedLine } from "./ode.ts";
+import { parseRunId, parseWorkflowRunId, type OdeFailure, type OdeRun, type OdeStep } from "./ode-run.ts";
 import type { Sql } from "./ports.ts";
 
 interface SectionRecord {
@@ -18,10 +19,19 @@ interface LineRecord {
   end_ms: number;
 }
 
-/** A column the table's check constraints guarantee for this kind of section. */
+interface RunRecord {
+  run_id: string;
+  step: OdeStep;
+  started_at: Date;
+  workflow_run_id: string | null;
+  failure: OdeFailure["_tag"] | null;
+  failure_message: string | null;
+}
+
+/** A column the table's check constraints guarantee for this kind of row. */
 function required<T>(value: T | null, what: string): T {
   // Defect: the schema forbids this, so the row was written by something other than this store.
-  if (value === null) throw new Error(`corrupt ode_sections row: ${what} is null`);
+  if (value === null) throw new Error(`corrupt ode row: ${what} is null`);
   return value;
 }
 
@@ -39,13 +49,31 @@ function toSection(record: SectionRecord, lines: readonly TimedLine[]): Section 
   }
 }
 
+function toRun(record: RunRecord): OdeRun {
+  const run = parseRunId(record.run_id);
+  // Defect: only this store writes run_id, and it writes a RunId.
+  if (run._tag === "err") throw new Error(`corrupt ode_runs row: ${record.run_id} is not a run ID`);
+
+  if (record.failure === null) {
+    const workflowRun = record.workflow_run_id === null ? undefined : parseWorkflowRunId(record.workflow_run_id);
+    // Defect: the table forbids an empty workflow_run_id.
+    if (workflowRun?._tag === "err") throw new Error("corrupt ode_runs row: workflow_run_id is empty");
+    return { _tag: "Making", run: run.value, step: record.step, startedAt: record.started_at, workflowRun: workflowRun?.value };
+  }
+  const failure: OdeFailure =
+    record.failure === "LedgerNotReady"
+      ? { _tag: "LedgerNotReady", message: required(record.failure_message, "failure_message") }
+      : { _tag: record.failure };
+  return { _tag: "Failed", run: run.value, failure };
+}
+
 /**
- * Create the Postgres Ode store.
+ * Create the Postgres Ode store and run store.
  *
  * @param sql - The database; `save` runs in a transaction.
- * @returns A store backed by the `odes`, `ode_sections` and `ode_lines` tables.
+ * @returns One store backed by the `odes`, `ode_sections`, `ode_lines` and `ode_runs` tables, since saving the Ode and clearing its run are one commit.
  */
-export function createOdeStore(sql: Sql): OdeStore {
+export function createOdeStore(sql: Sql): OdeStore & OdeRuns {
   return {
     async read() {
       const sections = await sql.query<SectionRecord>(
@@ -71,8 +99,12 @@ export function createOdeStore(sql: Sql): OdeStore {
       return rows[0]?.audio;
     },
 
-    async save(ode: Ode, audio) {
-      await sql.transaction(async (tx) => {
+    async save(run, ode: Ode, audio) {
+      return sql.transaction(async (tx) => {
+        // Locked, so the run cannot be marked failed or replaced between this check and the commit.
+        const current = await tx.query("select 1 from ode_runs where id = 1 and run_id = $1 and failure is null for update", [run]);
+        if (current.rows.length === 0) return false;
+
         // Deleting the Ode cascades to its sections and lines; the new one goes in as a whole or not at all.
         await tx.query("delete from odes");
         await tx.query("insert into odes (id, audio) values (1, $1)", [audio]);
@@ -97,7 +129,56 @@ export function createOdeStore(sql: Sql): OdeStore {
             );
           }
         }
+        await tx.query("delete from ode_runs where id = 1");
+        return true;
       });
+    },
+
+    async current() {
+      const { rows } = await sql.query<RunRecord>(
+        "select run_id, step, started_at, workflow_run_id, failure, failure_message from ode_runs where id = 1",
+      );
+      return rows[0] === undefined ? undefined : toRun(rows[0]);
+    },
+
+    async begin(run, startedAt) {
+      // A single statement, so concurrent requests cannot both begin, and no run begins over a saved Ode: the
+      // conflict clause only replaces a failed run.
+      const { rows } = await sql.query(
+        `insert into ode_runs (id, run_id, step, started_at)
+         select 1, $1, 'writing', $2 where not exists (select 1 from odes)
+         on conflict (id) do update set
+           run_id = excluded.run_id, step = 'writing', started_at = excluded.started_at,
+           workflow_run_id = null, failure = null, failure_message = null
+         where ode_runs.failure is not null
+         returning id`,
+        [run, startedAt],
+      );
+      return rows.length > 0;
+    },
+
+    async attach(run, workflowRun) {
+      await sql.query("update ode_runs set workflow_run_id = $2 where id = 1 and run_id = $1 and failure is null", [run, workflowRun]);
+    },
+
+    async advance(run, step) {
+      const { rows } = await sql.query(
+        "update ode_runs set step = $2 where id = 1 and run_id = $1 and failure is null returning id",
+        [run, step],
+      );
+      return rows.length > 0;
+    },
+
+    async fail(run, failure) {
+      const { rows } = await sql.query(
+        "update ode_runs set failure = $2, failure_message = $3 where id = 1 and run_id = $1 and failure is null returning id",
+        [run, failure._tag, failure._tag === "LedgerNotReady" ? failure.message : null],
+      );
+      return rows.length > 0;
+    },
+
+    async discard(run) {
+      await sql.query("delete from ode_runs where id = 1 and run_id = $1 and failure is null", [run]);
     },
   };
 }

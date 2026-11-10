@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { Hono, type Context } from "hono";
 import { parseByteRange } from "./byte-range.ts";
 import { parseRowEdit, rowWarnings, type LedgerRow } from "./ledger.ts";
@@ -5,10 +6,11 @@ import { editLedgerRow, proposeLedger, type ProposeLedgerError, type StoredLedge
 import { createLedgerStore } from "./ledger-store.ts";
 import { editLyricLine, writeLyrics, type WriteLyricsError } from "./lyrics-service.ts";
 import { createLyricsStore } from "./lyrics-store.ts";
-import { createOdeMaker, ODE_STEPS, type MakeOdeError, type OdeStatus, type OdeStep, type StartOdeError } from "./ode-service.ts";
+import { ODE_STEPS, parseRunId, type OdeFailure, type OdeStep, type RunId } from "./ode-run.ts";
+import { createOdeMaker, type OdeStatus, type StartOdeError } from "./ode-service.ts";
 import { createOdeStore } from "./ode-store.ts";
 import { parseLineEdit, parseLineNumber, type LineSlot, type LyricLine, type Lyrics, type NoSuchLine } from "./lyrics.ts";
-import type { Ports, Sql } from "./ports.ts";
+import type { OdeWorkflow, Ports, Sql } from "./ports.ts";
 import { ok, type Result } from "./result.ts";
 import * as TripNotes from "./trip-notes.ts";
 
@@ -66,26 +68,31 @@ function writeFailure(error: WriteLyricsError): { status: 422 | 502; message: st
 }
 
 /** What the payer is told when a run did not produce an Ode. Nothing was saved in any of these cases. */
-function makeFailureMessage(error: MakeOdeError): string {
-  switch (error._tag) {
+function makeFailureMessage(failure: OdeFailure): string {
+  switch (failure._tag) {
     case "LedgerNotReady":
-      return error.message;
+      return failure.message;
     case "ClaudeUnavailable":
     case "MalformedLyrics":
       return "Couldn't write your lyrics just now. Try again in a moment.";
     case "MusicUnavailable":
       return "Couldn't compose your Ode just now. Try again in a moment.";
     case "OdeRunCrashed":
+    case "OdeRunLost":
       return "Something went wrong making your Ode. Try again in a moment.";
   }
 }
 
-function startFailure(error: StartOdeError): { status: 409 | 422; message: string } {
+function startFailure(error: StartOdeError): { status: 409 | 422 | 502; message: string } {
   switch (error._tag) {
     case "LedgerNotReady":
       return { status: 422, message: error.message };
     case "OdeAlreadyMade":
       return { status: 409, message: error.message };
+    case "WorkflowUnavailable":
+      // The payer gets a retry message; the operator needs the cause.
+      console.error(`starting the Ode's Workflow run failed (${error._tag}):`, error);
+      return { status: 502, message: "Couldn't start making your Ode just now. Try again in a moment." };
   }
 }
 
@@ -102,24 +109,41 @@ function odeJson(status: OdeStatus) {
     case "Making":
       return { status: "making", steps: stepsJson(status.step) };
     case "Failed":
-      return { status: "failed", error: makeFailureMessage(status.error) };
+      return { status: "failed", error: makeFailureMessage(status.failure) };
     case "Ready":
       return { status: "ready", durationMs: status.ode.durationMs, audioUrl: "/api/ode/audio", sections: status.ode.sections };
   }
 }
 
+/** A fresh run ID for each attempt to make the Ode. */
+function newRunId(): RunId {
+  const run = parseRunId(randomUUID());
+  // Defect: randomUUID always returns a lower-case UUID.
+  if (run._tag === "err") throw run.error;
+  return run.value;
+}
+
 /**
  * The HTTP API: the one seam the tests and the browser both use.
  *
- * @param deps - The database and the four external-service ports.
+ * @param deps - The database, the external-service ports the API calls itself (Eleven Music is called only by
+ *   the Workflow task), and the Workflow that makes the Ode.
  * @returns A Hono app serving `/api/*`.
  */
-export function createApi({ sql, ports }: { sql: Sql; ports: Ports }): Hono {
+export function createApi({
+  sql,
+  ports,
+  workflow,
+}: {
+  sql: Sql;
+  ports: Pick<Ports, "clock" | "claude" | "paypal">;
+  workflow: OdeWorkflow;
+}): Hono {
   const api = new Hono();
   const store = createLedgerStore(sql);
   const lyricsStore = createLyricsStore(sql);
   const odeStore = createOdeStore(sql);
-  const odeMaker = createOdeMaker({ claude: ports.claude, music: ports.music, ledger: store, lyrics: lyricsStore, odes: odeStore });
+  const odeMaker = createOdeMaker({ clock: ports.clock, ledger: store, odes: odeStore, runs: odeStore, workflow, newRunId });
 
   api.get("/api/health", (c) => c.json({ ok: true, now: ports.clock.now().toISOString() }));
 

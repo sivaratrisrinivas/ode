@@ -51,6 +51,24 @@ export async function migrate(sql: Sql): Promise<void> {
        audio bytea not null
      )`,
   );
+  // The run making the Ode, kept here because the Workflow task and the web service are different processes and both
+  // must see it. One row, replaced by the next attempt. It does not cascade away with the ledger: a run still going
+  // when the ledger is replaced must still be able to say it failed. A run that saves the Ode deletes its row in the
+  // same commit; a failed run keeps its row so the payer can be told. `failure` is null while the run is making.
+  await sql.query(
+    `create table if not exists ode_runs (
+       id integer primary key check (id = 1),
+       run_id text not null,
+       step text not null check (step in ('writing', 'composing', 'finding-lines')),
+       started_at timestamptz not null,
+       workflow_run_id text check (workflow_run_id <> ''),
+       failure text check (failure in
+         ('LedgerNotReady', 'ClaudeUnavailable', 'MalformedLyrics', 'MusicUnavailable', 'OdeRunCrashed', 'OdeRunLost')),
+       failure_message text,
+       check (failure is not null or failure_message is null),
+       check ((failure = 'LedgerNotReady') = (failure_message is not null) or failure is null)
+     )`,
+  );
   await sql.query(
     `create table if not exists ode_sections (
        position integer primary key,

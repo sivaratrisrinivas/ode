@@ -1,8 +1,8 @@
 import type { LedgerStore } from "./ledger-service.ts";
-import { writeLyrics, type LyricsStore, type WriteLyricsError } from "./lyrics-service.ts";
 import { lyricFriends, type LedgerNotReady } from "./lyrics.ts";
-import { buildOde, planOde, type Ode } from "./ode.ts";
-import type { Claude, ElevenMusic, MusicUnavailable } from "./ports.ts";
+import type { Ode } from "./ode.ts";
+import type { MakingRun, OdeFailure, OdeRun, OdeStep, RunId, WorkflowRunId } from "./ode-run.ts";
+import type { Clock, OdeWorkflow, WorkflowUnavailable } from "./ports.ts";
 import { err, ok, type Result } from "./result.ts";
 
 /** What the Ode service needs from storage for the one Ode. */
@@ -11,15 +11,46 @@ export interface OdeStore {
   read(): Promise<Ode | undefined>;
   /** The saved Ode's audio; undefined when there is no Ode. */
   readAudio(): Promise<Uint8Array | undefined>;
-  /** Save the Ode and its audio together, all or nothing, in place of any current Ode. */
-  save(ode: Ode, audio: Uint8Array): Promise<void>;
+  /**
+   * Save the Ode and its audio together, all or nothing, in place of any current Ode, and clear the run
+   * in the same commit.
+   *
+   * @returns False, with nothing saved, when `run` is no longer the run in progress.
+   */
+  save(run: RunId, ode: Ode, audio: Uint8Array): Promise<boolean>;
 }
 
-/** The steps of making the Ode, in the order they run. */
-export const ODE_STEPS = ["writing", "composing", "finding-lines"] as const;
-
-/** Where a run is: the lyrics are being written (or read), the song composed, or the line windows found and saved. */
-export type OdeStep = (typeof ODE_STEPS)[number];
+/**
+ * What the Ode service and the Workflow task need from storage for the one run. The task and the web service
+ * are different processes, so this is where they meet: every method states what happens when `run` is no longer
+ * the run in progress, so a stale process can never change the current run.
+ */
+export interface OdeRuns {
+  /** The run in progress or the one that failed; undefined when none is kept. */
+  current(): Promise<OdeRun | undefined>;
+  /**
+   * Record a new run at the first step, replacing a failed one.
+   *
+   * @returns False, with nothing changed, when an Ode is already saved or a run is already in progress.
+   */
+  begin(run: RunId, startedAt: Date): Promise<boolean>;
+  /** Record the Workflow's own ID for a run in progress. Does nothing when `run` is not in progress. */
+  attach(run: RunId, workflowRun: WorkflowRunId): Promise<void>;
+  /**
+   * Move a run in progress to the next step.
+   *
+   * @returns False, with nothing changed, when `run` is not in progress.
+   */
+  advance(run: RunId, step: OdeStep): Promise<boolean>;
+  /**
+   * Record that a run in progress ended without an Ode.
+   *
+   * @returns False, with nothing changed, when `run` is not in progress.
+   */
+  fail(run: RunId, failure: OdeFailure): Promise<boolean>;
+  /** Forget a run in progress, as if it had never begun. Does nothing when `run` is not in progress. */
+  discard(run: RunId): Promise<void>;
+}
 
 /** An Ode is already saved, and making a new one is out of scope. */
 export class OdeAlreadyMade extends Error {
@@ -32,22 +63,8 @@ export class OdeAlreadyMade extends Error {
   }
 }
 
-/** Something unexpected, not a known failure, stopped a run. */
-export class OdeRunCrashed extends Error {
-  /** Identifies this error in a union. */
-  readonly _tag = "OdeRunCrashed" as const;
-
-  /** @param cause - The unexpected error, kept for the operator's log. */
-  constructor(cause: unknown) {
-    super("Making the Ode stopped unexpectedly", { cause });
-  }
-}
-
 /** Why a run could not be started. */
-export type StartOdeError = LedgerNotReady | OdeAlreadyMade;
-
-/** Why a run that started did not produce an Ode. */
-export type MakeOdeError = WriteLyricsError | MusicUnavailable | OdeRunCrashed;
+export type StartOdeError = LedgerNotReady | OdeAlreadyMade | WorkflowUnavailable;
 
 /** The run in progress. */
 export interface MakingOde {
@@ -59,90 +76,113 @@ export interface MakingOde {
 export type OdeStatus =
   | { readonly _tag: "NotMade" }
   | MakingOde
-  | { readonly _tag: "Failed"; readonly error: MakeOdeError }
+  | { readonly _tag: "Failed"; readonly failure: OdeFailure }
   | { readonly _tag: "Ready"; readonly ode: Ode };
 
-/** Makes the Ode from the saved lyrics, in the background of the web service. */
+/** Starts the pipeline that makes the Ode in the Workflow, and reports how far it got. */
 export interface OdeMaker {
   /**
-   * Start making the Ode. A run already in progress is not started twice.
+   * Start making the Ode. A run already in progress is not started twice, by this web service process or any other.
    *
-   * @returns The run in progress, or why none could start.
+   * @returns The status after the request: the run just started or already in progress, or why none could start.
    */
-  start(): Promise<Result<MakingOde, StartOdeError>>;
-  /** The current status, for the payer to poll. */
+  start(): Promise<Result<OdeStatus, StartOdeError>>;
+  /**
+   * The current status, for the payer to poll. A run the Workflow has ended without saving an Ode is recorded as lost
+   * here, so a run that died never leaves the payer waiting.
+   */
   status(): Promise<OdeStatus>;
 }
 
-type RunState = { readonly _tag: "Idle" } | MakingOde | { readonly _tag: "Failed"; readonly error: MakeOdeError };
+/**
+ * How long a run may wait for the Workflow to accept it. Starting takes one request, so a run still
+ * without a Workflow record after this was cut off by the web service dying between recording and starting.
+ */
+const START_GRACE_MS = 30_000;
 
 /**
- * Create the Ode maker. Its run state lives in this process, so a restart forgets a run in
- * progress or a failure; an Ode that was saved is kept. The Render Workflow (#25) replaces this.
+ * The longest a run may be in progress. The Workflow task times out after five minutes, so a run still going after
+ * ten has been lost whatever the Workflow says, or cannot say: a revoked API key or a run Render no longer knows
+ * must not keep the payer waiting for ever.
+ */
+const MAX_RUN_MS = 10 * 60_000;
+
+/**
+ * Create the Ode maker. It keeps no state of its own: the run lives in the database and the Workflow, so any
+ * web service process can start the run, poll it, or pick it up after a restart.
  *
- * @param deps - Claude and Eleven Music, the ledger, lyrics and Ode stores.
+ * @param deps - The clock, the ledger, the Ode and run stores, the Workflow, and how run IDs are chosen.
  */
 export function createOdeMaker(deps: {
-  claude: Claude;
-  music: ElevenMusic;
+  clock: Clock;
   ledger: Pick<LedgerStore, "read">;
-  lyrics: LyricsStore;
-  odes: OdeStore;
+  odes: Pick<OdeStore, "read">;
+  runs: OdeRuns;
+  workflow: OdeWorkflow;
+  newRunId: () => RunId;
 }): OdeMaker {
-  let run: RunState = { _tag: "Idle" };
-
-  /** Write the lyrics when none are saved, compose, find the line windows, then save. Nothing is saved before the end. */
-  async function produce(): Promise<Result<void, MakeOdeError>> {
-    const saved = await deps.lyrics.read();
-    const lyrics =
-      saved !== undefined ? ok(saved) : await writeLyrics({ claude: deps.claude, ledger: deps.ledger, store: deps.lyrics });
-    if (lyrics._tag === "err") return err(lyrics.error);
-
-    run = { _tag: "Making", step: "composing" };
-    const plan = planOde(lyrics.value);
-    const song = await deps.music.compose(plan.chunks);
-    if (song._tag === "err") return err(song.error);
-
-    run = { _tag: "Making", step: "finding-lines" };
-    const { ode, unaligned } = buildOde(plan, song.value.words);
-    for (const verse of unaligned) console.warn(`${verse.friend}'s verse falls back to equal quarters:`, verse.reason.message);
-    await deps.odes.save(ode, song.value.audio);
-    return ok(undefined);
+  /** The run is read before the Ode: a run saves the Ode and clears itself in one commit, so a run seen as gone already has its Ode. */
+  async function observe() {
+    const run = await deps.runs.current();
+    return { run, ode: await deps.odes.read() };
   }
 
-  async function execute(): Promise<void> {
-    try {
-      const result = await produce();
-      if (result._tag === "ok") {
-        run = { _tag: "Idle" };
-      } else {
-        console.error(`making the Ode failed (${result.error._tag}):`, result.error);
-        run = { _tag: "Failed", error: result.error };
-      }
-    } catch (cause) {
-      // A defect (a database error, a bug): the process must live on and the payer must be able to retry.
-      console.error("making the Ode crashed:", cause);
-      run = { _tag: "Failed", error: new OdeRunCrashed(cause) };
+  function toStatus({ run, ode }: Awaited<ReturnType<typeof observe>>): OdeStatus {
+    if (ode !== undefined) return { _tag: "Ready", ode };
+    if (run === undefined) return { _tag: "NotMade" };
+    return run._tag === "Making" ? { _tag: "Making", step: run.step } : { _tag: "Failed", failure: run.failure };
+  }
+
+  /** Whether a run in progress can no longer finish: the Workflow says it ended, or it never reached the Workflow. */
+  async function hasEnded(run: MakingRun): Promise<boolean> {
+    const age = deps.clock.now().getTime() - run.startedAt.getTime();
+    if (age > MAX_RUN_MS) {
+      console.error(`run ${run.run} has been in progress for ${Math.round(age / 1000)} s; recording it as lost`);
+      return true;
     }
+    if (run.workflowRun === undefined) return age > START_GRACE_MS;
+
+    const state = await deps.workflow.status(run.workflowRun);
+    if (state._tag === "err") {
+      // The Workflow cannot say, so the run may still be going: keep showing it, until it is too old to be.
+      console.error(`could not ask the Workflow about run ${run.run}:`, state.error);
+      return false;
+    }
+    if (state.value === "active") return false;
+    console.error(`the Workflow run for ${run.run} ended as ${state.value} without saving the Ode`);
+    return true;
   }
 
-  return {
-    async start() {
-      if ((await deps.odes.read()) !== undefined) return err(new OdeAlreadyMade());
-      const friends = lyricFriends(await deps.ledger.read());
-      if (friends._tag === "err") return err(friends.error);
+  async function status(): Promise<OdeStatus> {
+    const seen = await observe();
+    if (seen.ode === undefined && seen.run?._tag === "Making" && (await hasEnded(seen.run))) {
+      // Conditional on the run still being in progress, so a run that saved its Ode just now is not marked lost.
+      await deps.runs.fail(seen.run.run, { _tag: "OdeRunLost" });
+      return toStatus(await observe());
+    }
+    return toStatus(seen);
+  }
 
-      // Checked and set with no await between, so two requests cannot both start a run.
-      if (run._tag === "Making") return ok(run);
-      run = { _tag: "Making", step: "writing" };
-      void execute();
-      return ok(run);
-    },
+  async function start(): Promise<Result<OdeStatus, StartOdeError>> {
+    const friends = lyricFriends(await deps.ledger.read());
+    if (friends._tag === "err") return err(friends.error);
 
-    async status() {
-      if (run._tag === "Making" || run._tag === "Failed") return run;
-      const ode = await deps.odes.read();
-      return ode === undefined ? { _tag: "NotMade" } : { _tag: "Ready", ode };
-    },
-  };
+    // One statement checks that there is no Ode and no run in progress, and records this run, so two requests (or a
+    // request and a run that is just saving) cannot both start a paid song.
+    const run = deps.newRunId();
+    if (!(await deps.runs.begin(run, deps.clock.now()))) {
+      const current = await status();
+      return current._tag === "Ready" ? err(new OdeAlreadyMade()) : ok(current);
+    }
+
+    const started = await deps.workflow.start(run);
+    if (started._tag === "err") {
+      await deps.runs.discard(run);
+      return err(started.error);
+    }
+    await deps.runs.attach(run, started.value);
+    return ok({ _tag: "Making", step: "writing" });
+  }
+
+  return { start, status };
 }

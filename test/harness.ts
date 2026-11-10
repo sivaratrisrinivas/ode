@@ -1,8 +1,9 @@
 import { PGlite } from "@electric-sql/pglite";
 import { createApi } from "../src/server/app.ts";
+import { createOdeJob } from "../src/server/ode-job.ts";
 import type { Claude, ElevenMusic, Sql } from "../src/server/ports.ts";
 import { migrate } from "../src/server/schema.ts";
-import { fakePorts } from "../src/testing/fakes.ts";
+import { fakePorts, fakeWorkflow } from "../src/testing/fakes.ts";
 
 // PGlite takes ~5 s to boot, so each test file boots one and every harness
 // resets it. Tests within a file run sequentially, so sharing is safe.
@@ -20,29 +21,37 @@ async function freshDatabase(): Promise<Sql> {
   return sql;
 }
 
-/** The test seam: the HTTP API, with in-process Postgres and fakes at the four ports. */
+/**
+ * The test seam: the HTTP API, with in-process Postgres and fakes at the four ports and at the Workflow.
+ * The fake Workflow runs the Render task's job with its own database stores, as a separate process would.
+ */
 export async function createHarness(canned: { claude?: Claude; music?: ElevenMusic } = {}) {
   const sql = await freshDatabase();
   const ports = { ...fakePorts(), ...canned };
-  const api = createApi({ sql, ports });
+  const workflow = fakeWorkflow(createOdeJob({ sql, claude: ports.claude, music: ports.music }));
 
-  return {
-    ...ports,
-    request: (path: string, init?: RequestInit) => api.request(path, init),
-    get: (path: string) => api.request(path),
-    post: (path: string, body: unknown, headers: Record<string, string> = {}) =>
-      api.request(path, {
-        method: "POST",
-        headers: { "content-type": "application/json", ...headers },
-        body: JSON.stringify(body),
-      }),
-    patch: (path: string, body: unknown) =>
-      api.request(path, {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(body),
-      }),
-  };
+  /** A web service process: a new API over the same database and Workflow, as after a deploy or a crash. */
+  function webService() {
+    const api = createApi({ sql, ports, workflow });
+    return {
+      request: (path: string, init?: RequestInit) => api.request(path, init),
+      get: (path: string) => api.request(path),
+      post: (path: string, body: unknown, headers: Record<string, string> = {}) =>
+        api.request(path, {
+          method: "POST",
+          headers: { "content-type": "application/json", ...headers },
+          body: JSON.stringify(body),
+        }),
+      patch: (path: string, body: unknown) =>
+        api.request(path, {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(body),
+        }),
+    };
+  }
+
+  return { ...ports, workflow, ...webService(), restartWebService: webService };
 }
 
 /**
