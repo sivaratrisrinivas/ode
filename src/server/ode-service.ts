@@ -1,3 +1,4 @@
+import type { CapReached } from "./judge-odes.ts";
 import type { LedgerStore } from "./ledger-service.ts";
 import { lyricFriends, requireUnflagged, type LedgerNotReady, type LyricsFlagged } from "./lyrics.ts";
 import type { LyricsStore } from "./lyrics-service.ts";
@@ -65,7 +66,7 @@ export class OdeAlreadyMade extends Error {
 }
 
 /** Why a run could not be started. */
-export type StartOdeError = LedgerNotReady | LyricsFlagged | OdeAlreadyMade | WorkflowUnavailable;
+export type StartOdeError = LedgerNotReady | LyricsFlagged | OdeAlreadyMade | CapReached | WorkflowUnavailable;
 
 /** The run in progress. */
 export interface MakingOde {
@@ -112,7 +113,9 @@ const MAX_RUN_MS = 10 * 60_000;
  * Create the Ode maker. It keeps no state of its own: the run lives in the database and the Workflow, so any
  * web service process can start the run, poll it, or pick it up after a restart.
  *
- * @param deps - The clock, the ledger, the lyrics, the Ode and run stores, the Workflow, and how run IDs are chosen.
+ * @param deps - The clock, the ledger, the lyrics, the Ode and run stores, the Workflow, and how run IDs are chosen. `admit`, when
+ *   given, is asked before a new Ode starts being made (not before a retry of a failed run, which has already been admitted) and
+ *   may refuse it.
  */
 export function createOdeMaker(deps: {
   clock: Clock;
@@ -122,6 +125,7 @@ export function createOdeMaker(deps: {
   runs: OdeRuns;
   workflow: OdeWorkflow;
   newRunId: () => RunId;
+  admit?: () => Promise<Result<void, CapReached>>;
 }): OdeMaker {
   /** The run is read before the Ode: a run saves the Ode and clears itself in one commit, so a run seen as gone already has its Ode. */
   async function observe() {
@@ -177,6 +181,12 @@ export function createOdeMaker(deps: {
     const saved = await deps.lyrics.read();
     const unflagged = saved === undefined ? undefined : requireUnflagged(saved);
     if (unflagged?._tag === "err") return err(unflagged.error);
+
+    // A retry of a failed run was admitted when that run started; anything else is a new Ode, and may have to wait for tomorrow.
+    if (seen._tag !== "Failed" && deps.admit !== undefined) {
+      const admitted = await deps.admit();
+      if (admitted._tag === "err") return err(admitted.error);
+    }
 
     // One statement checks that there is no Ode and no run in progress, and records this run, so two requests (or a
     // request and a run that is just saving) cannot both start a paid song.

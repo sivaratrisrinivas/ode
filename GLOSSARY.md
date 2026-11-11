@@ -94,3 +94,10 @@ The pre-made Ode from the real 2025 Florida trip, sung in the payer's cloned voi
 
 **Visitor copy**:
 One browser's payments against the Seeded Ode, kept under the `ode_visitor` cookie. The Ode and its audio are shared; only what has been paid is the visitor's own. "Reset demo" clears it; a missing or cleared cookie starts a new, unpaid one.
+
+**Own Ode**:
+An Ode a judge makes from their own trip notes, with 1 to 3 friends. It belongs to that judge's browser alone: its ledger, lyrics, song and payments are theirs, and only they can pay it. Its friends are paid through the three sandbox friend accounts by their place on the ledger (first friend, first account), whatever the notes call them. A visitor works on the Seeded Ode until they start an Own Ode.
+_Avoid_: Judge Ode, custom Ode
+
+**Daily cap**:
+At most 5 new Own Odes start being made each day (UTC), counted across all visitors, because each spends Eleven Music credits. Once they are used up a visitor stays on the Seeded Ode and is told so; the count starts again at 00:00 UTC. Retrying a failed run does not use another place.

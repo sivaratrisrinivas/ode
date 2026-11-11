@@ -6,6 +6,8 @@ export interface FriendAccounts {
   emailFor(friend: string): string | undefined;
   /** The friend an account pays, as the name they were set up under; undefined when it is nobody's. */
   friendFor(email: string): string | undefined;
+  /** Every account, in the order they were set up. */
+  emails(): readonly string[];
 }
 
 /** The friend accounts setting could not be read. */
@@ -31,7 +33,23 @@ export function friendAccounts(accounts: Readonly<Record<string, string>>): Frie
   return {
     emailFor: (friend) => byName.get(friend.toLowerCase()),
     friendFor: (email) => byEmail.get(email.toLowerCase()),
+    emails: () => Object.values(accounts),
   };
+}
+
+/**
+ * Pair a judge's friends with the sandbox accounts by place: the first friend on the ledger is paid through the first account,
+ * the second through the second, and so on. A judge's friends have whatever names their notes gave them, so names cannot say
+ * which account pays them.
+ *
+ * @param accounts - The sandbox accounts, in the order they were set up.
+ * @param friends - The friends on the judge's ledger, in ledger order.
+ * @returns A lookup in which a friend with no account at their place (more friends than accounts) is paid by nobody.
+ */
+export function pairedInOrder(accounts: FriendAccounts, friends: readonly string[]): FriendAccounts {
+  const emails = accounts.emails();
+  const paired = Object.fromEntries(friends.flatMap((friend, place) => (emails[place] === undefined ? [] : [[friend, emails[place]]])));
+  return friendAccounts(paired);
 }
 
 /**

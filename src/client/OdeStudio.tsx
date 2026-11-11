@@ -41,9 +41,10 @@ function Steps({ steps }: { steps: Step[] }) {
 
 /**
  * The lyrics to review and the one "Make the Ode" action; then the status steps while it is made,
- * a retry if it fails, and the cassette to play once it is ready. `quiet` is passed on to the cassette.
+ * a retry if it fails, and the cassette to play once it is ready. `quiet` is passed on to the cassette. `onFellBack` hears
+ * why the Ode was not made when the day's new Odes were used up: the visitor is back on the Seeded Ode.
  */
-export function OdeStudio({ quiet = false }: { quiet?: boolean }): ReactElement {
+export function OdeStudio({ quiet = false, onFellBack }: { quiet?: boolean; onFellBack?: (message: string) => void }): ReactElement {
   const [load, setLoad] = useState<Load>({ status: "loading" });
   const [startError, setStartError] = useState<string | null>(null);
   // Lines flagged in the lyrics preview; the Ode is not made while any is, or before the preview has said.
@@ -82,6 +83,12 @@ export function OdeStudio({ quiet = false }: { quiet?: boolean }): ReactElement 
         // Already made (in another tab): show it.
         await refresh();
         return;
+      }
+      if (res.status === 429) {
+        // The day's new Odes are used up: the server has put this visitor back on the Seeded Ode.
+        const message = await failureMessage(res);
+        if (onFellBack !== undefined) return onFellBack(message);
+        return setStartError(message);
       }
       if (!res.ok) return setStartError(await failureMessage(res));
       const started: OdeResponse = await res.json();

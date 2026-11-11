@@ -16,10 +16,10 @@ export class UnknownLink extends Error {
 /**
  * Turn a store's answer to "whose link is this" into a value.
  *
- * @param friend - The friend the token belongs to, or undefined when it belongs to nobody.
+ * @param holder - Who the token belongs to, or undefined when it belongs to nobody.
  */
-export function linkOwner(friend: string | undefined): Result<string, UnknownLink> {
-  return friend === undefined ? err(new UnknownLink()) : ok(friend);
+export function linkOwner<Holder>(holder: Holder | undefined): Result<Holder, UnknownLink> {
+  return holder === undefined ? err(new UnknownLink()) : ok(holder);
 }
 
 /** How often an open friend view looks for a change. Under a second, so an unlock reaches the view within the second. */
