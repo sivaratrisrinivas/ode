@@ -4,8 +4,10 @@ import { renderShareCard } from "./card-image.ts";
 import { requestOrigin, withShareCard } from "./share-page.ts";
 import { linkOwner } from "./friend-view.ts";
 import type { LedgerStore } from "./ledger-service.ts";
+import type { LinkHolder } from "./ledger-store.ts";
 import type { OdeStore } from "./ode-service.ts";
-import type { FriendStanding } from "./payments.ts";
+import { copyOf, type Owner } from "./owner.ts";
+import type { Payments } from "./payments.ts";
 import { chorusDropped } from "./unlock.ts";
 import { err, ok, type Result } from "./result.ts";
 import {
@@ -21,15 +23,21 @@ import {
 } from "./verse-share.ts";
 import type { VerseShareStore } from "./verse-share-store.ts";
 import type { VisitorEnv } from "./visitor.ts";
-import type { VisitorId } from "./visitor-id.ts";
+
+/** What the verse share routes read from one owner's Ode. */
+export interface ShareScope {
+  ledger: Pick<LedgerStore, "trip">;
+  odes: Pick<OdeStore, "read" | "readAudio">;
+  payments: Pick<Payments, "standings">;
+}
 
 /** What the verse share routes read. */
 export interface VerseShareDeps {
-  ledger: Pick<LedgerStore, "friendForToken" | "trip">;
-  odes: Pick<OdeStore, "read" | "readAudio">;
+  /** Whose Ode and which friend a private link belongs to, across every Ode; undefined for a link nobody holds. */
+  holderOf: (token: string) => Promise<LinkHolder | undefined>;
+  /** What to read from one owner's Ode. */
+  scopeFor: (owner: Owner) => ShareScope;
   shares: VerseShareStore;
-  /** Every friend's standing in the visitor's copy of the Ode. */
-  standings: (visitor: VisitorId) => Promise<readonly FriendStanding[]>;
   /** The built app's `index.html`, which the share page is made from. */
   indexHtml: string;
 }
@@ -46,7 +54,8 @@ interface OpenShare {
 async function openShare(deps: VerseShareDeps, token: string): Promise<Result<OpenShare, UnknownShare | NoOdeToShare>> {
   const record = await deps.shares.read(token);
   if (record === undefined) return err(new UnknownShare());
-  const [ode, audio, trip] = await Promise.all([deps.odes.read(), deps.odes.readAudio(), deps.ledger.trip()]);
+  const { odes, ledger } = deps.scopeFor(record.owner);
+  const [ode, audio, trip] = await Promise.all([odes.read(), odes.readAudio(), ledger.trip()]);
   if (ode === undefined || audio === undefined) return err(new UnknownShare());
   const share = buildVerseShare(ode, record);
   if (share._tag === "err") return share;
@@ -63,14 +72,17 @@ async function openShare(deps: VerseShareDeps, token: string): Promise<Result<Op
 export function mountVerseShares(api: Hono<VisitorEnv>, deps: VerseShareDeps): void {
   // The friend's own request: it is the friend's link that proves who is sharing, so only a friend can make a share.
   api.post("/api/friends/:token/share", async (c) => {
-    const friend = linkOwner(await deps.ledger.friendForToken(c.req.param("token")));
-    if (friend._tag === "err") return c.json({ error: friend.error.message }, 404);
+    const holder = linkOwner(await deps.holderOf(c.req.param("token")));
+    if (holder._tag === "err") return c.json({ error: holder.error.message }, 404);
 
-    if ((await deps.odes.read()) === undefined) return c.json({ error: "The Ode isn't ready yet, so there is nothing to share." }, 422);
-    const standings = await deps.standings(c.get("visitor"));
+    // The link names whose Ode it is; what has been repaid is read in the copy the visitor sees (a judge's Ode counts the judge's).
+    const { owner, friend } = holder.value;
+    const scope = deps.scopeFor(owner);
+    if ((await scope.odes.read()) === undefined) return c.json({ error: "The Ode isn't ready yet, so there is nothing to share." }, 422);
+    const standings = await scope.payments.standings(copyOf(owner, c.get("visitor")));
     const record = shareRecordFor(
-      friend.value,
-      standings.find((standing) => standing.friend === friend.value),
+      holder.value,
+      standings.find((standing) => standing.friend === friend),
       chorusDropped(standings),
     );
     if (record._tag === "err") return c.json({ error: record.error.message }, 422);

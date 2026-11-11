@@ -19,6 +19,14 @@ type Load = { status: "loading" } | { status: "unreachable" } | OdeResponse;
 
 const POLL_MS = 1000;
 
+/** `YYYY-MM-DD` for a day this many days from today in the browser's own calendar; the server decides what dates are allowed. */
+function dateInDays(days: number): string {
+  const date = new Date();
+  date.setDate(date.getDate() + days);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
 const stepLabels: Record<string, string> = {
   writing: "Writing the lyrics",
   composing: "Composing the song",
@@ -41,13 +49,16 @@ function Steps({ steps }: { steps: Step[] }) {
 
 /**
  * The lyrics to review and the one "Make the Ode" action; then the status steps while it is made,
- * a retry if it fails, and the cassette to play once it is ready. `quiet` is passed on to the cassette.
+ * a retry if it fails, and the cassette to play once it is ready. `quiet` is passed on to the cassette. `onFellBack` hears
+ * why the Ode was not made when the day's new Odes were used up: the visitor is back on the Seeded Ode.
  */
-export function OdeStudio({ quiet = false }: { quiet?: boolean }): ReactElement {
+export function OdeStudio({ quiet = false, onFellBack }: { quiet?: boolean; onFellBack?: (message: string) => void }): ReactElement {
   const [load, setLoad] = useState<Load>({ status: "loading" });
   const [startError, setStartError] = useState<string | null>(null);
   // Lines flagged in the lyrics preview; the Ode is not made while any is, or before the preview has said.
   const [flagged, setFlagged] = useState<number | null>(null);
+  // The promise to the friends, a month out unless the payer picks another day; it cannot be changed once the Ode is made.
+  const [releaseDate, setReleaseDate] = useState(() => dateInDays(30));
 
   async function refresh() {
     // A failed poll mid-run is not the end of the run: keep the steps on screen and ask again.
@@ -77,11 +88,21 @@ export function OdeStudio({ quiet = false }: { quiet?: boolean }): ReactElement 
   async function make() {
     setStartError(null);
     try {
-      const res = await fetch("/api/ode", { method: "POST" });
+      const res = await fetch("/api/ode", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(releaseDate === "" ? {} : { releaseDate }),
+      });
       if (res.status === 409) {
         // Already made (in another tab): show it.
         await refresh();
         return;
+      }
+      if (res.status === 429) {
+        // The day's new Odes are used up: the server has put this visitor back on the Seeded Ode.
+        const message = await failureMessage(res);
+        if (onFellBack !== undefined) return onFellBack(message);
+        return setStartError(message);
       }
       if (!res.ok) return setStartError(await failureMessage(res));
       const started: OdeResponse = await res.json();
@@ -113,6 +134,13 @@ export function OdeStudio({ quiet = false }: { quiet?: boolean }): ReactElement 
         ) : (
           <>
             {load.status === "failed" && <p role="alert" style={{ color: "#b00020" }}>{load.error}</p>}
+            <p>
+              <label>
+                Release date <input type="date" value={releaseDate} onChange={(event) => setReleaseDate(event.target.value)} />
+              </label>
+              <br />
+              <small>The day you promise the whole Ode drops. It can’t be changed after you make the Ode.</small>
+            </p>
             <button onClick={() => void make()} disabled={flagged === null || flagged > 0} aria-describedby={flagged !== null && flagged > 0 ? "flagged-why" : undefined}>
               {load.status === "failed" ? "Try again" : "Make the Ode"}
             </button>

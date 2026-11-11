@@ -37,8 +37,6 @@ export interface LedgerStore {
   ): Promise<LedgerRow | undefined>;
   /** Each friend's private link token, by friend name. A friend keeps theirs until the ledger is replaced. */
   linkTokens(): Promise<ReadonlyMap<string, string>>;
-  /** The friend a link token belongs to; undefined for a token nobody holds, including one from a replaced ledger. */
-  friendForToken(token: string): Promise<string | undefined>;
 }
 
 const instructions = `You read a payer's free-text trip notes and extract who they owe. "Me" and "I" are the payer.

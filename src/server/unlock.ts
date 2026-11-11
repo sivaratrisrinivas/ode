@@ -1,4 +1,5 @@
 import { LINES_PER_VERSE } from "./lyrics.ts";
+import { daysUntil, type ReleaseDate } from "./release-date.ts";
 
 /**
  * How many of a friend's lines are unlocked: each 25% of the amount owed unlocks the next line, in order.
@@ -43,4 +44,41 @@ export function chorusDropped(standings: readonly { amountOwedCents: number; amo
  */
 export function withChorusLock<Chorus extends object>(chorus: Chorus, standings: readonly { amountOwedCents: number; amountRepaidCents: number }[]) {
   return { ...chorus, locked: !chorusDropped(standings) };
+}
+
+/** Where the Ode stands against its release date, as the payer's page and each friend's page both show it. */
+export interface ReleaseStatus {
+  /** The promised date, `YYYY-MM-DD`. */
+  date: ReleaseDate;
+  /** Whole days left, 0 on the release day; null once the date has passed or the chorus has dropped. */
+  daysToDrop: number | null;
+  /** The date has passed with a friend still unpaid. The chorus stays locked either way; only full repayment drops it. */
+  delayed: boolean;
+  /** The line to show ("1 of 3 friends · 22 days to drop"); null once the chorus has dropped. */
+  countdown: string | null;
+}
+
+/**
+ * The release date's countdown, or its delayed state. One function for both readers, so they cannot disagree.
+ *
+ * @param date - The release date.
+ * @param now - The current time.
+ * @param standings - Each friend who has an amount owed.
+ * @returns Not delayed and no countdown once every friend is repaid, whenever that happens; otherwise delayed when the
+ *   release day is over, and the days left until then.
+ */
+export function releaseStatus(
+  date: ReleaseDate,
+  now: Date,
+  standings: readonly { amountOwedCents: number; amountRepaidCents: number }[],
+): ReleaseStatus {
+  if (chorusDropped(standings)) return { date, daysToDrop: null, delayed: false, countdown: null };
+
+  const repaid = standings.filter((standing) => standing.amountRepaidCents >= standing.amountOwedCents).length;
+  const friends = `${repaid} of ${standings.length} friends`;
+  const days = daysUntil(date, now);
+  if (days < 0) return { date, daysToDrop: null, delayed: true, countdown: `Delayed · ${friends} repaid · was due ${date}` };
+
+  const left = days === 0 ? "drops today" : days === 1 ? "1 day to drop" : `${days} days to drop`;
+  return { date, daysToDrop: days, delayed: false, countdown: `${friends} · ${left}` };
 }

@@ -2,7 +2,7 @@ import { inflateSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
 import { fakeClaudeByTask } from "../src/testing/fakes.ts";
 import { createHarness, pollUntil } from "./harness.ts";
-import { seedExtraction, seedLyrics, seedNotes } from "./seed.ts";
+import { goaExtraction, goaNotes, lyricsForFriends, seedExtraction, seedLyrics, seedNotes } from "./seed.ts";
 
 interface ReadyOde {
   status: string;
@@ -389,6 +389,51 @@ describe("sharing a verse", () => {
 
       expect((await harness.get(`/api/shares/${"0".repeat(64)}/audio`)).status).toBe(404);
     });
+  });
+});
+
+describe("sharing a verse from a judge's own Ode", () => {
+  it("shares the judge's Ode as counted in the judge's copy, for a friend who opens the link in their own browser", async () => {
+    const harness = await createHarness({
+      claude: fakeClaudeByTask({
+        "extract-ledger": (notes) => (notes.includes("Goa") ? goaExtraction : seedExtraction),
+        "write-lyrics": lyricsForFriends,
+      }),
+    });
+    await harness.post("/api/ledger", { notes: seedNotes });
+    await harness.post("/api/lyrics", {});
+    await harness.post("/api/ode", {});
+    const judge = harness.newBrowser();
+    await judge.post("/api/judge-ode", {});
+    await judge.post("/api/ledger", { notes: goaNotes });
+    await judge.post("/api/lyrics", {});
+    await judge.post("/api/ode", {});
+    const own = await pollUntil(
+      async () => json<ReadyOde>(await judge.get("/api/ode")),
+      (ode) => ode.status === "ready",
+    );
+    const meera = own.sections.find((section) => section.friend === "Meera")?.friendViewPath ?? "";
+    const friendsPhone = harness.newBrowser();
+    const apiLink = meera.replace("/f/", "/api/friends/");
+
+    // Nothing of Meera's is paid, so her link offers nothing to share.
+    expect((await json<FriendViewBody>(await friendsPhone.get(apiLink))).canShare).toBe(false);
+    expect((await friendsPhone.post(`${apiLink}/share`, {})).status).toBe(422);
+
+    const { orderId } = await json<{ orderId: string }>(await judge.post("/api/payments/orders", { friend: "Meera", amountCents: 5_000 }));
+    await judge.post("/api/payments/capture", { orderId });
+    expect((await json<FriendViewBody>(await friendsPhone.get(apiLink))).canShare).toBe(true);
+    const made = await json<{ sharePath: string }>(await friendsPhone.post(`${apiLink}/share`, {}));
+
+    const stranger = harness.newBrowser();
+    const text = await (await stranger.get(shareApi(made.sharePath))).text();
+    const body: ShareBody = JSON.parse(text);
+    expect(body.title).toBe("An Ode for Meera · Goa '26");
+    expect(body.sections.find((section) => section.kind === "verse")?.lines).toEqual(["Meera laughed the whole way there"]);
+    expect(text).not.toContain("Tharun");
+    expect(text).not.toContain("Dev");
+    expect((await stranger.get(`${shareApi(made.sharePath)}/audio`)).status).toBe(200);
+    expect(await (await stranger.get(made.sharePath)).text()).toContain("Goa &#39;26");
   });
 });
 

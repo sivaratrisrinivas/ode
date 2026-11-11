@@ -27,7 +27,7 @@ function friendLinks(ode: OdeAnswer): FriendLink[] {
   );
 }
 
-/** The bar above the panes: the visitor's own copy of the demo, with the way to start it again from unpaid. */
+/** The bar above the panes: the visitor's own copy of the demo, with the way to start it again from unpaid or to make their own Ode. */
 const BAR = { display: "flex", gap: "0.75rem", alignItems: "center", flexWrap: "wrap", gridColumn: "1 / -1" } as const;
 
 /** Two panes side by side when there is room, stacked on a phone. */
@@ -43,7 +43,8 @@ const CSS = `
  * The whole arc on one page: the payer's page on the left, and on the right a friend's own view with a picker for which
  * friend. A payment made on the left unlocks the line on the right, because the right pane is that friend's live page.
  * The left pane is told to stay quiet, so the unlock is sung once, by the friend's pane. Every payment on the page counts
- * in this browser's own copy of the Seeded Ode, and "Reset demo" puts that copy back to unpaid for a retake.
+ * in this browser's own copy of the Seeded Ode, and "Reset demo" puts that copy back to unpaid for a retake. "Make my own
+ * Ode" swaps the Seeded Ode for a new one built from the visitor's own notes, and "Back to the Seeded Ode" swaps it back.
  */
 export function SplitScreen(): ReactElement {
   const [links, setLinks] = useState<FriendLink[]>([]);
@@ -52,6 +53,26 @@ export function SplitScreen(): ReactElement {
   const [copy, setCopy] = useState(0);
   const [resetting, setResetting] = useState(false);
   const [resetError, setResetError] = useState<string | null>(null);
+  // Whether the visitor is on their own Ode, and why they could not start one (the day's new Odes are used up).
+  const [mine, setMine] = useState(false);
+  const [judgeBusy, setJudgeBusy] = useState(false);
+  const [judgeError, setJudgeError] = useState<string | null>(null);
+
+  /** Start (`POST`) or leave (`DELETE`) the visitor's own Ode, then load both panes again. */
+  async function judgeOde(method: "POST" | "DELETE") {
+    setJudgeBusy(true);
+    setJudgeError(null);
+    try {
+      const res = await fetch("/api/judge-ode", { method });
+      if (!res.ok) return setJudgeError(await failureMessage(res));
+      setMine(method === "POST");
+      setCopy((n) => n + 1);
+    } catch {
+      setJudgeError(UNREACHABLE);
+    } finally {
+      setJudgeBusy(false);
+    }
+  }
 
   async function resetDemo() {
     setResetting(true);
@@ -72,10 +93,12 @@ export function SplitScreen(): ReactElement {
     let live = true;
     async function look() {
       try {
-        const res = await fetch("/api/ode");
+        const [res, judge] = await Promise.all([fetch("/api/ode"), fetch("/api/judge-ode")]);
         if (!res.ok || !live) return;
         const found = friendLinks(await res.json());
         if (live) setLinks(found);
+        // The panes can end the visitor's own Ode too: the day's new Odes run out while they are making theirs.
+        if (judge.ok && live) setMine((await judge.json()).mine === true);
       } catch {
         // Keep what the picker showed; the next look may reach the server.
       }
@@ -98,6 +121,19 @@ export function SplitScreen(): ReactElement {
           Reset demo
         </button>
         {resetError !== null && <span role="alert" style={{ color: "#b00020" }}>{resetError}</span>}
+        {mine ? (
+          <>
+            <span>Your own Ode</span>
+            <button onClick={() => void judgeOde("DELETE")} disabled={judgeBusy}>
+              Back to the Seeded Ode
+            </button>
+          </>
+        ) : (
+          <button onClick={() => void judgeOde("POST")} disabled={judgeBusy}>
+            Make my own Ode
+          </button>
+        )}
+        {judgeError !== null && <span role="alert" style={{ color: "#b00020" }}>{judgeError}</span>}
       </div>
       <section className="ode-split-pane" aria-label="You, the payer">
         <iframe key={copy} title="Payer" src="/?quiet" allow="autoplay" />

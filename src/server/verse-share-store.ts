@@ -1,3 +1,4 @@
+import { parseOwner } from "./owner.ts";
 import type { Sql } from "./ports.ts";
 import type { ShareRecord } from "./verse-share.ts";
 
@@ -24,13 +25,13 @@ export interface VerseShareStore {
  */
 export function createVerseShareStore(sql: Sql): VerseShareStore {
   return {
-    async create({ friend, linesUnlocked, withChorus }) {
+    async create({ owner, friend, linesUnlocked, withChorus }) {
       // The no-op update makes a repeated share return its row.
       const { rows } = await sql.query<{ token: string }>(
-        `insert into verse_shares (friend, lines_unlocked, with_chorus) values ($1, $2, $3)
-         on conflict (friend, lines_unlocked, with_chorus) do update set friend = excluded.friend
+        `insert into verse_shares (owner, friend, lines_unlocked, with_chorus) values ($1, $2, $3, $4)
+         on conflict (owner, friend, lines_unlocked, with_chorus) do update set friend = excluded.friend
          returning token`,
-        [friend, linesUnlocked, withChorus],
+        [owner, friend, linesUnlocked, withChorus],
       );
       const row = rows[0];
       // Defect: an insert with a conflict clause always returns its row.
@@ -41,12 +42,16 @@ export function createVerseShareStore(sql: Sql): VerseShareStore {
     async read(token) {
       // A malformed token holds nothing, and a stray NUL byte would make the database refuse the query.
       if (!SHARE_TOKEN.test(token)) return undefined;
-      const { rows } = await sql.query<{ friend: string; lines_unlocked: number; with_chorus: boolean }>(
-        "select friend, lines_unlocked, with_chorus from verse_shares where token = $1",
+      const { rows } = await sql.query<{ owner: string; friend: string; lines_unlocked: number; with_chorus: boolean }>(
+        "select owner, friend, lines_unlocked, with_chorus from verse_shares where token = $1",
         [token],
       );
       const row = rows[0];
-      return row === undefined ? undefined : { friend: row.friend, linesUnlocked: row.lines_unlocked, withChorus: row.with_chorus };
+      if (row === undefined) return undefined;
+      const owner = parseOwner(row.owner);
+      // Defect: only this store writes owner, and it writes an Owner.
+      if (owner._tag === "err") throw new Error(`corrupt verse_shares row: ${row.owner} is not an owner`);
+      return { owner: owner.value, friend: row.friend, linesUnlocked: row.lines_unlocked, withChorus: row.with_chorus };
     },
   };
 }

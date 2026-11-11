@@ -1,4 +1,5 @@
 import type { Ode, TimeWindow } from "./ode.ts";
+import type { Owner } from "./owner.ts";
 import type { FriendStanding } from "./payments.ts";
 import { err, ok, type Result } from "./result.ts";
 
@@ -34,6 +35,8 @@ export class UnknownShare extends Error {
 
 /** What a verse share holds, fixed when the friend makes it: how much of the friend's verse and whether the chorus was in. */
 export interface ShareRecord {
+  /** Whose Ode the share is cut from: the Seeded Ode, or a judge's own. */
+  readonly owner: Owner;
   readonly friend: string;
   /** The first this many of the friend's lines are in the share; at least 1. */
   readonly linesUnlocked: number;
@@ -54,17 +57,18 @@ export function canShareVerse(standing: Pick<FriendStanding, "linesUnlocked"> | 
 /**
  * What a friend's verse share holds right now.
  *
+ * @param holder - The friend and the Ode whose link was used.
  * @param standing - The friend's standing; undefined for a friend with nothing owed.
  * @param chorusHasDropped - Whether every friend is repaid.
  * @returns The record to keep, or `NoUnlockedLines`.
  */
 export function shareRecordFor(
-  friend: string,
+  holder: { readonly owner: Owner; readonly friend: string },
   standing: Pick<FriendStanding, "linesUnlocked"> | undefined,
   chorusHasDropped: boolean,
 ): Result<ShareRecord, NoUnlockedLines> {
   if (standing === undefined || !canShareVerse(standing)) return err(new NoUnlockedLines());
-  return ok({ friend, linesUnlocked: standing.linesUnlocked, withChorus: chorusHasDropped });
+  return ok({ owner: holder.owner, friend: holder.friend, linesUnlocked: standing.linesUnlocked, withChorus: chorusHasDropped });
 }
 
 /**
