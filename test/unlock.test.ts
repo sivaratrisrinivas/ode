@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { linesUnlocked, nextLineAtCents } from "../src/server/unlock.ts";
+import { chorusDropped, linesUnlocked, nextLineAtCents } from "../src/server/unlock.ts";
 
 describe("lines unlocked", () => {
   // Tharun owes $97.50: each line is a quarter, $24.375.

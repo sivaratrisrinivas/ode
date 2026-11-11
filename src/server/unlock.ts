@@ -21,3 +21,14 @@ export function nextLineAtCents(owedCents: number, repaidCents: number): number 
   if (unlocked === LINES_PER_VERSE) return undefined;
   return Math.ceil(((unlocked + 1) * owedCents) / LINES_PER_VERSE);
 }
+
+/**
+ * Whether the chorus has dropped: every friend with an amount owed is fully repaid. The payer's page and each
+ * friend's page both ask this, so they cannot disagree about when the Ode is complete.
+ *
+ * @param standings - Each friend who has an amount owed; a friend with none (missing or covered) is not on the list.
+ * @returns False with no friends, so an empty ledger never drops a chorus.
+ */
+export function chorusDropped(standings: readonly { amountOwedCents: number; amountRepaidCents: number }[]): boolean {
+  return standings.length > 0 && standings.every((standing) => standing.amountRepaidCents >= standing.amountOwedCents);
+}

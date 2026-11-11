@@ -1,5 +1,7 @@
 import {
   buildLedger,
+  DEFAULT_TRIP,
+  MAX_TRIP_LENGTH,
   parseExtraction,
   UnknownFriend,
   type AmountStatus,
@@ -13,15 +15,19 @@ import type { Claude, ClaudeUnavailable, JsonSchema } from "./ports.ts";
 import { err, ok, type Result } from "./result.ts";
 import type { TripNotes } from "./trip-notes.ts";
 
-/** The ledger as saved: the notes it came from, the rows in notes order, and the ledger-level warnings. */
+/** The ledger as saved: the notes it came from, the trip's name, the rows in notes order, and the ledger-level warnings. */
 export interface StoredLedger extends Ledger {
   readonly notes: string;
+  /** What the trip is called, as shown after the chorus drops. */
+  readonly trip: string;
 }
 
 /** What the ledger service needs from storage for the one ledger. */
 export interface LedgerStore {
   /** The saved ledger; empty when no notes have been turned into a ledger yet. */
   read(): Promise<StoredLedger>;
+  /** What the saved ledger's trip is called; `DEFAULT_TRIP` when there is no ledger. */
+  trip(): Promise<string>;
   /** Replace the whole ledger atomically. Lyrics written from the old ledger are deleted with it. */
   replace(ledger: StoredLedger): Promise<void>;
   /** Write the given fields to one friend's row; undefined when no such friend is on the ledger. */
@@ -44,6 +50,8 @@ friends: every friend the payer owes money to (never the payer). For each friend
 - insideJoke: one short trip memory about this friend taken from the notes, in at most 15 words. null when the notes hold none.
 
 groupCosts: costs the payer covered for the whole group (for example "I paid the parking, $30"), each with the total cost in cents, not anyone's share. Leave out costs a friend paid. amountCents is null when the notes give no amount.
+
+trip: a short name for the trip, such as "Florida '25" (the place and the year), in at most ${MAX_TRIP_LENGTH} characters. Use "${DEFAULT_TRIP}" when the notes give neither.
 
 Never invent a friend, an amount or a memory that the notes do not contain.`;
 
@@ -78,8 +86,9 @@ const schema: JsonSchema = {
         additionalProperties: false,
       },
     },
+    trip: { type: "string" },
   },
-  required: ["friends", "groupCosts"],
+  required: ["friends", "groupCosts", "trip"],
   additionalProperties: false,
 };
 
@@ -108,7 +117,7 @@ export async function proposeLedger(
   const ledger = buildLedger(extraction.value);
   if (ledger._tag === "err") return err(ledger.error);
 
-  const stored: StoredLedger = { notes, ...ledger.value };
+  const stored: StoredLedger = { notes, trip: extraction.value.trip, ...ledger.value };
   await deps.store.replace(stored);
   return ok(stored);
 }

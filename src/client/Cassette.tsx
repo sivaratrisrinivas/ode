@@ -24,12 +24,15 @@ export interface VerseSection {
 export type Section =
   | { kind: "intro"; startMs: number; endMs: number }
   | VerseSection
-  | { kind: "hook" | "chorus"; text: string; startMs: number; endMs: number };
+  | { kind: "hook"; text: string; startMs: number; endMs: number }
+  | { kind: "chorus"; text: string; startMs: number; endMs: number; locked: boolean };
 
-/** A made Ode, ready to play. */
+/** A made Ode, ready to play. `dropped` is the server's word that every friend is repaid; `trip` is what to call the trip once it is. */
 export interface ReadyOde {
   durationMs: number;
   audioUrl: string;
+  trip: string;
+  dropped: boolean;
   sections: Section[];
 }
 
@@ -99,8 +102,8 @@ function Row({
       onClick={() => onPlay(span.startMs)}
       className={fresh ? "ode-unlock-line" : undefined}
       aria-current={current}
-      aria-label={locked ? "Locked line" : undefined}
-      title={locked ? "Locked until this friend is paid back far enough" : undefined}
+      aria-label={locked ? (label === "Chorus" ? "Locked chorus" : "Locked line") : undefined}
+      title={locked ? "Locked until the friends are paid back far enough" : undefined}
       style={{
         display: "block",
         width: "100%",
@@ -145,7 +148,10 @@ export function Cassette({ ode, onPaid, title = "Your Ode", quiet = false }: { o
 
   // The locked stretches of the song, read by the muffling loop on every frame.
   const lockedWindows = useRef<{ startMs: number; endMs: number }[]>([]);
-  lockedWindows.current = ode.sections.flatMap((section) => (section.kind === "verse" ? section.lines.filter((line) => line.locked) : []));
+  lockedWindows.current = ode.sections.flatMap((section) => {
+    if (section.kind === "verse") return section.lines.filter((line) => line.locked);
+    return section.kind === "chorus" && section.locked ? [section] : [];
+  });
 
   useEffect(() => {
     fetch("/api/config")
@@ -224,6 +230,14 @@ export function Cassette({ ode, onPaid, title = "Your Ode", quiet = false }: { o
     <section>
       <style>{UNLOCK_CSS}</style>
       <h2>{title}</h2>
+      {ode.dropped && (
+        <p
+          className="ode-unlock-banner"
+          style={{ background: "#ffd600", color: "#000", border: "4px solid #000", borderRadius: 12, padding: "0.75rem 1rem", margin: "0 0 0.75rem", fontSize: "1.5rem", fontWeight: 800, textAlign: "center" }}
+        >
+          Full Ode dropped · {ode.trip}
+        </p>
+      )}
       {unlocked.length > 0 && (
         <div
           role="status"
@@ -289,7 +303,7 @@ export function Cassette({ ode, onPaid, title = "Your Ode", quiet = false }: { o
             case "hook":
               return <Row key={key} label="Hook" text={section.text} span={section} now={now} onPlay={play} />;
             case "chorus":
-              return <Row key={key} label="Chorus" text={section.text} span={section} now={now} onPlay={play} />;
+              return <Row key={key} label="Chorus" text={section.text} span={section} locked={section.locked} now={now} onPlay={play} />;
           }
         })}
       </div>

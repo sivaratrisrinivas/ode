@@ -6,6 +6,12 @@ export const MAX_FRIENDS = 3;
 /** Longest inside joke accepted, in characters. */
 export const MAX_JOKE_LENGTH = 280;
 
+/** Longest trip name kept, in characters. */
+export const MAX_TRIP_LENGTH = 40;
+
+/** What the trip is called when the notes gave Claude no name for it. */
+export const DEFAULT_TRIP = "Our trip";
+
 /** Largest amount owed accepted, in cents ($100,000). */
 export const MAX_AMOUNT_CENTS = 10_000_000;
 
@@ -51,6 +57,8 @@ export interface GroupCost {
 export interface Extraction {
   readonly friends: readonly ExtractedFriend[];
   readonly groupCosts: readonly GroupCost[];
+  /** A short name for the trip ("Florida '25"); `DEFAULT_TRIP` when the notes gave none. */
+  readonly trip: string;
 }
 
 /** Claude's reply did not have the shape the schema promised. */
@@ -136,7 +144,9 @@ export function parseExtraction(raw: unknown): Result<Extraction, MalformedExtra
     groupCosts.push({ description, amountCents });
   }
 
-  return ok({ friends, groupCosts });
+  // A trip name is a nicety: a missing or blank one falls back rather than failing the whole ledger.
+  const trip = isRecord(raw) && typeof raw["trip"] === "string" ? raw["trip"].trim().slice(0, MAX_TRIP_LENGTH) : "";
+  return ok({ friends, groupCosts, trip: trip === "" ? DEFAULT_TRIP : trip });
 }
 
 /**
