@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { Hono, type Context } from "hono";
-import { audioResponse as serveAudio } from "./audio-response.ts";
+import { audioResponse } from "./audio-response.ts";
 import { pairedInOrder, type FriendAccounts } from "./friend-accounts.ts";
 import { eventStream, friendViewJson, friendViewPath, linkOwner, lockedSections, type UnknownLink } from "./friend-view.ts";
 import { parseRowEdit, rowWarnings, type LedgerRow } from "./ledger.ts";
@@ -9,7 +9,7 @@ import { createJudgeOdes } from "./judge-odes.ts";
 import { createLedgerStore, findLinkHolder } from "./ledger-store.ts";
 import { editLyricLine, writeLyrics, type LyricsStore, type WriteLyricsError } from "./lyrics-service.ts";
 import { createLyricsStore } from "./lyrics-store.ts";
-import { copyOf, SEEDED, type Owner } from "./owner.ts";
+import { policyOf, SEEDED, type Owner, type OwnerPolicy } from "./owner.ts";
 import { ODE_STEPS, parseRunId, type OdeFailure, type OdeStep, type RunId } from "./ode-run.ts";
 import { createOdeMaker, type OdeMaker, type OdeRuns, type OdeStatus, type OdeStore, type StartOdeError } from "./ode-service.ts";
 import { createOdeStore } from "./ode-store.ts";
@@ -25,7 +25,6 @@ import { BARE_SHELL } from "./share-page.ts";
 import { chorusDropped, releaseStatus } from "./unlock.ts";
 import { createVerseShareStore } from "./verse-share-store.ts";
 import { mountVerseShares } from "./verse-share-routes.ts";
-import { canShareVerse } from "./verse-share.ts";
 import { visitorMiddleware, type VisitorEnv } from "./visitor.ts";
 import type { VisitorId } from "./visitor-id.ts";
 
@@ -217,18 +216,12 @@ function newRunId(): RunId {
 /** Everything the API reads and writes for one Ode: the Seeded Ode's, or one judge's. */
 interface Scope {
   owner: Owner;
+  policy: OwnerPolicy;
   ledger: LedgerStore;
   lyrics: LyricsStore;
   odes: OdeStore & OdeRuns;
   maker: OdeMaker;
   payments: Payments;
-}
-
-/** The audio of an Ode as a response, with the byte ranges a player asks for. */
-function audioResponse(c: Context, audio: Uint8Array | undefined): Response {
-  if (audio === undefined) return c.json({ error: "There is no Ode to play yet." }, 404);
-
-  return serveAudio(c, audio);
 }
 
 /**
@@ -266,13 +259,12 @@ export function createApi({
     const ledger = createLedgerStore(sql, owner);
     const lyrics = createLyricsStore(sql, owner);
     const odes = createOdeStore(sql, owner);
-    // The Seeded Ode's friends are paid by name; a judge's by their place on the ledger, whatever their notes call them.
-    const accounts = async () => (owner === SEEDED ? friendAccounts : pairedInOrder(friendAccounts, (await ledger.read()).rows.map((row) => row.friend)));
+    const policy = policyOf(owner);
+    const accounts = async () => (policy.friendsPaidByName ? friendAccounts : pairedInOrder(friendAccounts, (await ledger.read()).rows.map((row) => row.friend)));
     const payments = createPayments({ ledger, store: createPaymentStore(sql, owner), paypal: ports.paypal, accounts });
-    // Only a judge's Ode counts against the day's cap: the Seeded Ode is the payer's own.
-    const admit = owner === SEEDED ? undefined : () => judges.claim(owner);
+    const admit = policy.countsAgainstCap ? () => judges.claim(owner) : undefined;
     const maker = createOdeMaker({ clock: ports.clock, ledger, lyrics, odes, runs: odes, workflow, newRunId, ...(admit ? { admit } : {}) });
-    return { owner, ledger, lyrics, odes, maker, payments };
+    return { owner, policy, ledger, lyrics, odes, maker, payments };
   }
 
   /** The Ode the visitor is working on: their own if they started one, else the Seeded Ode. */
@@ -452,9 +444,8 @@ export function createApi({
     if (holder._tag === "err") return holder;
     const { owner, friend } = holder.value;
     const scope = scopeFor(owner);
-    const [status, finish] = await Promise.all([scope.maker.status(), finishOf(scope, copyOf(owner, visitor), `/api/friends/${token}/audio`)]);
-    const canShare = status._tag === "Ready" && canShareVerse(finish.standings.find((standing) => standing.friend === friend));
-    return ok(friendViewJson(friend, finish.standings, canShare, (sections) => odeJson(status, finish, sections)));
+    const [status, finish] = await Promise.all([scope.maker.status(), finishOf(scope, scope.policy.copyOf(visitor), `/api/friends/${token}/audio`)]);
+    return ok(friendViewJson(friend, finish.standings, status, (sections) => odeJson(status, finish, sections)));
   }
 
   api.get("/api/friends/:token", async (c) => {

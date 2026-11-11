@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { fakeClaudeByTask } from "../src/testing/fakes.ts";
-import { createHarness, pollUntil } from "./harness.ts";
+import { createHarness, MAKE_ODE, pollUntil } from "./harness.ts";
 import { seedExtraction, seedLyrics, seedNotes } from "./seed.ts";
 
 interface Standing {
@@ -34,7 +34,7 @@ async function ledgerHarness({ makeOde }: { makeOde: boolean }) {
   await harness.post("/api/ledger", { notes: seedNotes });
   await harness.post("/api/lyrics", {});
   if (makeOde) {
-    await harness.post("/api/ode", {});
+    await harness.post("/api/ode", MAKE_ODE);
     await pollUntil(
       async () => json<{ status: string }>(await harness.get("/api/ode")),
       (ode) => ode.status === "ready",
@@ -307,7 +307,7 @@ describe("the friend view", () => {
       const open = openEvents(await harness.get(`${link}/events`));
       expect((await open.next()).ode.status).toBe("none");
 
-      await harness.post("/api/ode", {});
+      await harness.post("/api/ode", MAKE_ODE);
 
       const ready = await pollUntil(
         () => open.next(5_000),

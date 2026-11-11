@@ -1,7 +1,7 @@
 import { inflateSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
 import { fakeClaudeByTask } from "../src/testing/fakes.ts";
-import { createHarness, pollUntil } from "./harness.ts";
+import { createHarness, MAKE_ODE, pollUntil } from "./harness.ts";
 import { goaExtraction, goaNotes, lyricsForFriends, seedExtraction, seedLyrics, seedNotes } from "./seed.ts";
 
 interface ReadyOde {
@@ -30,7 +30,7 @@ async function madeOde({ extraction = seedExtraction, lyrics = seedLyrics }: { e
   });
   await harness.post("/api/ledger", { notes: seedNotes });
   await harness.post("/api/lyrics", {});
-  await harness.post("/api/ode", {});
+  await harness.post("/api/ode", MAKE_ODE);
   await pollUntil(
     async () => json<ReadyOde>(await harness.get("/api/ode")),
     (ode) => ode.status === "ready",
@@ -402,12 +402,12 @@ describe("sharing a verse from a judge's own Ode", () => {
     });
     await harness.post("/api/ledger", { notes: seedNotes });
     await harness.post("/api/lyrics", {});
-    await harness.post("/api/ode", {});
+    await harness.post("/api/ode", MAKE_ODE);
     const judge = harness.newBrowser();
     await judge.post("/api/judge-ode", {});
     await judge.post("/api/ledger", { notes: goaNotes });
     await judge.post("/api/lyrics", {});
-    await judge.post("/api/ode", {});
+    await judge.post("/api/ode", MAKE_ODE);
     const own = await pollUntil(
       async () => json<ReadyOde>(await judge.get("/api/ode")),
       (ode) => ode.status === "ready",

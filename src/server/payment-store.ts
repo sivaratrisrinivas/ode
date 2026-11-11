@@ -1,5 +1,5 @@
 import type { PaymentStore } from "./payments.ts";
-import { parseOwner, type Owner } from "./owner.ts";
+import { ownerOfRow, type Owner } from "./owner.ts";
 import type { Sql } from "./ports.ts";
 import { parseVisitorId } from "./visitor-id.ts";
 
@@ -68,8 +68,5 @@ export function createPaymentStore(sql: Sql, owner: Owner): PaymentStore {
 export async function findOrderOwner(sql: Sql, orderId: string): Promise<Owner | undefined> {
   const { rows } = await sql.query<{ owner: string }>("select owner from payment_orders where order_id = $1", [orderId]);
   if (rows[0] === undefined) return undefined;
-  const owner = parseOwner(rows[0].owner);
-  // Defect: only this store writes owner, and it writes an Owner.
-  if (owner._tag === "err") throw new Error(`corrupt payment_orders row: ${rows[0].owner} is not an owner`);
-  return owner.value;
+  return ownerOfRow("payment_orders", rows[0].owner);
 }

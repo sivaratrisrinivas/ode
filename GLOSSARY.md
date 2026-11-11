@@ -72,7 +72,7 @@ A line becoming clear because the amount repaid reached its 25% step. Lines unlo
 The chorus unlocking on the last payment.
 
 **Release date**:
-The calendar day (UTC) the payer promises the whole Ode will drop, chosen when they make the Ode and fixed from then on; it may be today or later. Until then the pages show a countdown ("1 of 3 friends · 22 days to drop"). The release day itself is not late; once it is over, with friends unpaid, the Ode is delayed. It never drops the chorus.
+The calendar day (UTC) the payer promises the whole Ode will drop, required to make the Ode (the server refuses a start without one) and fixed from then on; it may be today or later. An Ode made before a release date was required has none: it shows no countdown and is never delayed. Until then the pages show a countdown ("1 of 3 friends · 22 days to drop"). The release day itself is not late; once it is over, with friends unpaid, the Ode is delayed. It never drops the chorus.
 _Avoid_: Deadline, due date
 
 **Delayed**:

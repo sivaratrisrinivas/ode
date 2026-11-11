@@ -1,7 +1,8 @@
 import { DEFAULT_TRIP, type AmountStatus, type LedgerRow } from "./ledger.ts";
 import type { LedgerStore, StoredLedger } from "./ledger-service.ts";
-import { parseOwner, type Owner } from "./owner.ts";
+import { ownerOfRow, type Owner } from "./owner.ts";
 import type { Sql } from "./ports.ts";
+import { isTokenShaped } from "./token.ts";
 
 interface FriendRecord {
   friend: string;
@@ -18,9 +19,6 @@ function toRow(record: FriendRecord): LedgerRow {
     insideJoke: record.inside_joke,
   };
 }
-
-/** What the schema generates for a link token: two UUIDs' hex digits. */
-const LINK_TOKEN = /^[0-9a-f]{64}$/;
 
 const selectFriends = "select friend, amount_owed_cents, amount_status, inside_joke from ledger_friends where owner = $1 order by position";
 
@@ -112,12 +110,9 @@ export interface LinkHolder {
  */
 export async function findLinkHolder(sql: Sql, token: string): Promise<LinkHolder | undefined> {
   // A malformed token holds nobody, and a stray NUL byte would make the database refuse the query.
-  if (!LINK_TOKEN.test(token)) return undefined;
+  if (!isTokenShaped(token)) return undefined;
   const { rows } = await sql.query<{ owner: string; friend: string }>("select owner, friend from ledger_friends where link_token = $1", [token]);
   const row = rows[0];
   if (row === undefined) return undefined;
-  const owner = parseOwner(row.owner);
-  // Defect: only this store writes owner, and it writes an Owner.
-  if (owner._tag === "err") throw new Error(`corrupt ledger_friends row: ${row.owner} is not an owner`);
-  return { owner: owner.value, friend: row.friend };
+  return { owner: ownerOfRow("ledger_friends", row.owner), friend: row.friend };
 }

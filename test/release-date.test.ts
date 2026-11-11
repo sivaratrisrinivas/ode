@@ -39,9 +39,9 @@ async function makeOde(harness: Harness, body: unknown) {
   );
 }
 
-async function madeOde(releaseDate: string | null = "2026-12-01") {
+async function madeOde(releaseDate = "2026-12-01") {
   const harness = await withLyrics();
-  await makeOde(harness, releaseDate === null ? {} : { releaseDate });
+  await makeOde(harness, { releaseDate });
   return harness;
 }
 
@@ -85,12 +85,6 @@ describe("the release date", () => {
 
     harness.clock.advance(DAY_MS);
     expect((await payerOde(harness)).release?.countdown).toBe("0 of 3 friends · drops today");
-  });
-
-  it("has no countdown when the Ode was made without a release date", async () => {
-    const harness = await madeOde(null);
-
-    for (const ode of await readers(harness)) expect(ode.release).toBeNull();
   });
 
   it("is delayed once the date has passed with a friend unpaid, and the chorus stays locked, for the payer and every friend", async () => {
@@ -157,6 +151,23 @@ describe("the release date", () => {
       expect(await json<{ status: string }>(await harness.get("/api/ode"))).toEqual({ status: "none" });
     },
   );
+
+  it("requires a release date: a request without one is refused and starts nothing", async () => {
+    const harness = await withLyrics();
+
+    for (const body of [{}, { releaseDate: "" }]) {
+      const res = await harness.post("/api/ode", body);
+      expect(res.status).toBe(422);
+      expect(await json<{ error: string }>(res)).toEqual({ error: expect.stringMatching(/release date/i) });
+    }
+    expect(await json<{ status: string }>(await harness.get("/api/ode"))).toEqual({ status: "none" });
+  });
+
+  it("answers an Ode already made, or a run in progress, before asking for the date", async () => {
+    const harness = await madeOde("2026-12-01");
+
+    expect((await harness.post("/api/ode", {})).status).toBe(409);
+  });
 
   it("accepts today as the release date", async () => {
     const harness = await madeOde("2026-11-09");

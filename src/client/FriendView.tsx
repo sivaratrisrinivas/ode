@@ -47,7 +47,7 @@ function playable(ode: FriendOde): ReadyOde | null {
 }
 
 /** The share button and, once pressed, the link to post: the server makes the share from what is unlocked right now. */
-function ShareVerse({ token, friend }: { token: string; friend: string }): ReactElement {
+function ShareVerse({ token }: { token: string }): ReactElement {
   const [link, setLink] = useState<string | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -58,11 +58,11 @@ function ShareVerse({ token, friend }: { token: string; friend: string }): React
     try {
       const res = await fetch(`/api/friends/${encodeURIComponent(token)}/share`, { method: "POST" });
       if (!res.ok) return setProblem(await failureMessage(res));
-      const made: { sharePath: string } = await res.json();
+      const made: { sharePath: string; title: string } = await res.json();
       const url = `${location.origin}${made.sharePath}`;
       setLink(url);
       // Where the device has a share sheet, offer it; the link stays on the page either way.
-      if (typeof navigator.share === "function") await navigator.share({ title: `An Ode for ${friend}`, url }).catch(() => undefined);
+      if (typeof navigator.share === "function") await navigator.share({ title: made.title, url }).catch(() => undefined);
     } catch {
       setProblem(UNREACHABLE);
     }
@@ -145,7 +145,7 @@ export function FriendView({ token }: { token: string }): ReactElement {
           </p>
         </section>
       )}
-      {load.view.canShare && <ShareVerse token={token} friend={friend} />}
+      {load.view.canShare && <ShareVerse token={token} />}
       {load.ode !== null ? (
         <Cassette ode={load.ode} title="The Ode" />
       ) : (

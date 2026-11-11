@@ -1,7 +1,7 @@
 import type { OdeRuns, OdeStore } from "./ode-service.ts";
 import { makeOde, type Ode, type Section, type TimedLine } from "./ode.ts";
 import { parseRunId, parseWorkflowRunId, type OdeFailure, type OdeRun, type OdeStep, type RunId } from "./ode-run.ts";
-import { parseOwner, type Owner } from "./owner.ts";
+import { ownerOfRow, type Owner } from "./owner.ts";
 import type { Sql } from "./ports.ts";
 import { parseReleaseDate } from "./release-date.ts";
 
@@ -174,7 +174,7 @@ export function createOdeStore(sql: Sql, owner: Owner): OdeStore & OdeRuns {
            workflow_run_id = null, failure = null, failure_message = null
          where ode_runs.failure is not null
          returning owner`,
-        [run, startedAt, releaseDate ?? null, owner],
+        [run, startedAt, releaseDate, owner],
       );
       return rows.length > 0;
     },
@@ -215,8 +215,5 @@ export function createOdeStore(sql: Sql, owner: Owner): OdeStore & OdeRuns {
 export async function findRunOwner(sql: Sql, run: RunId): Promise<Owner | undefined> {
   const { rows } = await sql.query<{ owner: string }>("select owner from ode_runs where run_id = $1", [run]);
   if (rows[0] === undefined) return undefined;
-  const owner = parseOwner(rows[0].owner);
-  // Defect: only this store writes owner, and it writes an Owner.
-  if (owner._tag === "err") throw new Error(`corrupt ode_runs row: ${rows[0].owner} is not an owner`);
-  return owner.value;
+  return ownerOfRow("ode_runs", rows[0].owner);
 }

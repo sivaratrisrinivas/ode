@@ -6,19 +6,21 @@ import { linkOwner } from "./friend-view.ts";
 import type { LedgerStore } from "./ledger-service.ts";
 import type { LinkHolder } from "./ledger-store.ts";
 import type { OdeStore } from "./ode-service.ts";
-import { copyOf, type Owner } from "./owner.ts";
+import type { Owner, OwnerPolicy } from "./owner.ts";
 import type { Payments } from "./payments.ts";
 import { chorusDropped } from "./unlock.ts";
 import { err, ok, type Result } from "./result.ts";
 import {
   buildVerseShare,
   byteStretches,
+  clipOf,
   CROSSFADE_MS,
+  NoOdeToShare,
+  shareHeadline,
   shareRecordFor,
   shareTitle,
   UnknownShare,
   type ByteStretch,
-  type NoOdeToShare,
   type VerseShare,
 } from "./verse-share.ts";
 import type { VerseShareStore } from "./verse-share-store.ts";
@@ -26,6 +28,7 @@ import type { VisitorEnv } from "./visitor.ts";
 
 /** What the verse share routes read from one owner's Ode. */
 export interface ShareScope {
+  policy: Pick<OwnerPolicy, "copyOf">;
   ledger: Pick<LedgerStore, "trip">;
   odes: Pick<OdeStore, "read" | "readAudio">;
   payments: Pick<Payments, "standings">;
@@ -78,8 +81,8 @@ export function mountVerseShares(api: Hono<VisitorEnv>, deps: VerseShareDeps): v
     // The link names whose Ode it is; what has been repaid is read in the copy the visitor sees (a judge's Ode counts the judge's).
     const { owner, friend } = holder.value;
     const scope = deps.scopeFor(owner);
-    if ((await scope.odes.read()) === undefined) return c.json({ error: "The Ode isn't ready yet, so there is nothing to share." }, 422);
-    const standings = await scope.payments.standings(copyOf(owner, c.get("visitor")));
+    if ((await scope.odes.read()) === undefined) return c.json({ error: new NoOdeToShare().message }, 422);
+    const standings = await scope.payments.standings(scope.policy.copyOf(c.get("visitor")));
     const record = shareRecordFor(
       holder.value,
       standings.find((standing) => standing.friend === friend),
@@ -87,7 +90,8 @@ export function mountVerseShares(api: Hono<VisitorEnv>, deps: VerseShareDeps): v
     );
     if (record._tag === "err") return c.json({ error: record.error.message }, 422);
 
-    return c.json({ sharePath: `/s/${await deps.shares.create(record.value)}` }, 201);
+    const sharePath = `/s/${await deps.shares.create(record.value)}`;
+    return c.json({ sharePath, title: shareTitle(friend, await scope.ledger.trip()) }, 201);
   });
 
   // Only the stretches the share holds are sent, joined end to end, so the audio carries nothing of a locked line.
@@ -96,13 +100,7 @@ export function mountVerseShares(api: Hono<VisitorEnv>, deps: VerseShareDeps): v
     if (open._tag === "err") return c.json({ error: open.error.message }, 404);
 
     const { audio, bytes } = open.value;
-    const clip = new Uint8Array(bytes.reduce((sum, stretch) => sum + stretch.end - stretch.start, 0));
-    let at = 0;
-    for (const stretch of bytes) {
-      clip.set(audio.subarray(stretch.start, stretch.end), at);
-      at += stretch.end - stretch.start;
-    }
-    return audioResponse(c, clip);
+    return audioResponse(c, clipOf(audio, bytes));
   });
 
   // The page a share's link opens. A chat app fetches it for the preview card and never runs its script, so the card's tags
@@ -132,7 +130,7 @@ export function mountVerseShares(api: Hono<VisitorEnv>, deps: VerseShareDeps): v
     if (open._tag === "err") return c.json({ error: open.error.message }, 404);
 
     const { share, trip } = open.value;
-    const png = renderShareCard({ headline: `An Ode for ${share.friend}`, subline: trip });
+    const png = renderShareCard({ headline: shareHeadline(share.friend), subline: trip });
     // A copy, because a response body must be backed by a plain ArrayBuffer.
     return c.body(new Uint8Array(png), 200, { "content-type": "image/png", "cache-control": "public, max-age=300" });
   });
