@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { ClaudeUnavailable, type ElevenMusic } from "../src/server/ports.ts";
 import { err, ok, type Result } from "../src/server/result.ts";
 import { fakeClaudeByTask, fakeMusic } from "../src/testing/fakes.ts";
-import { createHarness, pollUntil } from "./harness.ts";
+import { createHarness, MAKE_ODE, pollUntil } from "./harness.ts";
 import { seedExtraction, seedLyrics, seedNotes } from "./seed.ts";
 
 interface TimedLineBody {
@@ -126,7 +126,7 @@ describe("making the Ode", () => {
   it("composes an intro, one verse per friend each followed by a hook, and a chorus, back to back", async () => {
     const { post, get } = await lyricsHarness();
 
-    const started = await post("/api/ode", {});
+    const started = await post("/api/ode", MAKE_ODE);
     const ode = expectReady(await settledOde(get));
 
     expect(started.status).toBe(202);
@@ -158,7 +158,7 @@ describe("making the Ode", () => {
   it("stores a time window for every line, found from when the words are sung", async () => {
     const { post, get } = await lyricsHarness();
 
-    await post("/api/ode", {});
+    await post("/api/ode", MAKE_ODE);
     const ode = expectReady(await settledOde(get));
 
     expect(verses(ode).map((v) => [v.friend, v.lines.map((l) => l.text)])).toEqual(
@@ -170,7 +170,7 @@ describe("making the Ode", () => {
   it("still finds the windows when one sung word in each line is not the written word", async () => {
     const { post, get } = await lyricsHarness(fakeMusic({ singing: "one-word-misheard" }));
 
-    await post("/api/ode", {});
+    await post("/api/ode", MAKE_ODE);
     const ode = expectReady(await settledOde(get));
 
     expect(verses(ode).map(relativeWindows)).toEqual([sungWindows, sungWindows, sungWindows]);
@@ -183,7 +183,7 @@ describe("making the Ode", () => {
   ] as const)("splits each verse window into equal quarters when the timestamps are %s", async (_case, singing) => {
     const { post, get } = await lyricsHarness(fakeMusic({ singing }));
 
-    await post("/api/ode", {});
+    await post("/api/ode", MAKE_ODE);
     const ode = expectReady(await settledOde(get));
 
     expect(ode.sections.map(label)).toHaveLength(8);
@@ -194,7 +194,7 @@ describe("making the Ode", () => {
     const music = fakeMusic({ singing: (verse) => (verse === 2 ? "wrong-words" : "faithful") });
     const { post, get } = await lyricsHarness(music);
 
-    await post("/api/ode", {});
+    await post("/api/ode", MAKE_ODE);
     const ode = expectReady(await settledOde(get));
 
     expect(verses(ode).map(relativeWindows)).toEqual([sungWindows, quarters, sungWindows]);
@@ -205,14 +205,14 @@ describe("making the Ode", () => {
     const { post, get } = await lyricsHarness(music);
     music.failNextCompose();
 
-    const started = await post("/api/ode", {});
+    const started = await post("/api/ode", MAKE_ODE);
     const failed = await settledOde(get);
 
     expect(started.status).toBe(202);
     expect(failed).toEqual({ status: "failed", error: expect.stringContaining("Try again") });
     expect(await json<OdeBody>(await get("/api/ode"))).toEqual(failed);
 
-    const retried = await post("/api/ode", {});
+    const retried = await post("/api/ode", MAKE_ODE);
     const ode = expectReady(await settledOde(get));
 
     expect(retried.status).toBe(202);
@@ -230,13 +230,13 @@ describe("making the Ode", () => {
     };
     const { post, get } = await lyricsHarness(music);
 
-    await post("/api/ode", {});
+    await post("/api/ode", MAKE_ODE);
     const failed = await settledOde(get);
 
     expect(failed).toEqual({ status: "failed", error: expect.stringContaining("Try again") });
 
     broken = false;
-    await post("/api/ode", {});
+    await post("/api/ode", MAKE_ODE);
     expect((await settledOde(get)).status).toBe("ready");
   });
 
@@ -245,7 +245,7 @@ describe("making the Ode", () => {
       const { music, release } = heldMusic();
       const { post, get } = await lyricsHarness(music);
 
-      const started = await json<OdeBody>(await post("/api/ode", {}));
+      const started = await json<OdeBody>(await post("/api/ode", MAKE_ODE));
       const composing = await pollUntil(
         async () => json<OdeBody>(await get("/api/ode")),
         (ode) => ode.status !== "making" || ode.steps.some((step) => step.name === "composing" && step.state === "active"),
@@ -260,7 +260,7 @@ describe("making the Ode", () => {
     it("keeps showing the run and its steps after the web service restarts, and shows the Ode when the run ends", async () => {
       const { music, release } = heldMusic();
       const harness = await lyricsHarness(music);
-      await harness.post("/api/ode", {});
+      await harness.post("/api/ode", MAKE_ODE);
       await pollUntil(
         async () => json<OdeBody>(await harness.get("/api/ode")),
         (ode) => ode.status === "making" && ode.steps.some((step) => step.name === "composing" && step.state === "active"),
@@ -278,10 +278,10 @@ describe("making the Ode", () => {
     it("does not start a second run, or spend a second song, when the restarted web service is asked again", async () => {
       const { music, release, asked } = heldMusic();
       const harness = await lyricsHarness(music);
-      await harness.post("/api/ode", {});
+      await harness.post("/api/ode", MAKE_ODE);
 
       const restarted = harness.restartWebService();
-      const again = await restarted.post("/api/ode", {});
+      const again = await restarted.post("/api/ode", MAKE_ODE);
       release();
       await settledOde(restarted.get);
 
@@ -294,8 +294,8 @@ describe("making the Ode", () => {
       const { music, release, asked } = heldMusic();
       const { post, get } = await lyricsHarness(music);
 
-      await post("/api/ode", {});
-      const again = await post("/api/ode", {});
+      await post("/api/ode", MAKE_ODE);
+      const again = await post("/api/ode", MAKE_ODE);
 
       expect(again.status).toBe(202);
       expect((await json<OdeBody>(again)).status).toBe("making");
@@ -313,7 +313,7 @@ describe("making the Ode", () => {
       });
       await post("/api/ledger", { notes: seedNotes });
       await post("/api/lyrics", {});
-      await post("/api/ode", {});
+      await post("/api/ode", MAKE_ODE);
       await pollUntil(
         async () => json<OdeBody>(await get("/api/ode")),
         (ode) => ode.status === "making" && ode.steps.some((step) => step.name === "composing" && step.state === "active"),
@@ -337,14 +337,14 @@ describe("making the Ode", () => {
       const { post, get, workflow } = await lyricsHarness();
       workflow.loseNextRun();
 
-      const started = await post("/api/ode", {});
+      const started = await post("/api/ode", MAKE_ODE);
       const failed = await settledOde(get);
 
       expect(started.status).toBe(202);
       expect(failed).toEqual({ status: "failed", error: expect.stringContaining("Try again") });
       expect((await get("/api/ode/audio")).status).toBe(404);
 
-      const retried = await post("/api/ode", {});
+      const retried = await post("/api/ode", MAKE_ODE);
       const ode = expectReady(await settledOde(get));
 
       expect(retried.status).toBe(202);
@@ -355,13 +355,13 @@ describe("making the Ode", () => {
       const { post, get, workflow } = await lyricsHarness();
       workflow.refuseNextStart();
 
-      const refused = await post("/api/ode", {});
+      const refused = await post("/api/ode", MAKE_ODE);
 
       expect(refused.status).toBe(502);
       expect((await json<{ error: string }>(refused)).error).toContain("Try again");
       expect(await json<OdeBody>(await get("/api/ode"))).toEqual({ status: "none" });
 
-      await post("/api/ode", {});
+      await post("/api/ode", MAKE_ODE);
       expect((await settledOde(get)).status).toBe("ready");
     });
 
@@ -381,13 +381,13 @@ describe("making the Ode", () => {
           async () => composed,
           (asked) => asked === count,
         );
-      await post("/api/ode", {});
+      await post("/api/ode", MAKE_ODE);
       await songsAskedFor(1);
 
       // The Workflow reports the first run ended, though its instance carries on composing.
       workflow.reportStartedRunsFailed();
       const gaveUp = await json<OdeBody>(await get("/api/ode"));
-      await post("/api/ode", {});
+      await post("/api/ode", MAKE_ODE);
       await songsAskedFor(2);
       gates[0]?.open();
       const afterFirst = await workflow.whenRunsEnd(1);
@@ -409,7 +409,7 @@ describe("making the Ode", () => {
       });
       await post("/api/ledger", { notes: seedNotes });
       const instanceStarts = workflow.holdNextRun();
-      await post("/api/ode", {});
+      await post("/api/ode", MAKE_ODE);
 
       // New notes with no amount replace the ledger while the Workflow's instance is still starting up.
       extraction = {
@@ -427,7 +427,7 @@ describe("making the Ode", () => {
     it("lets the payer try again once the run has waited half a minute for a Workflow the web service never reached", async () => {
       const harness = await lyricsHarness();
       harness.workflow.hangNextStart();
-      void harness.post("/api/ode", {});
+      void harness.post("/api/ode", MAKE_ODE);
       await pollUntil(
         async () => json<OdeBody>(await harness.get("/api/ode")),
         (ode) => ode.status === "making",
@@ -442,14 +442,14 @@ describe("making the Ode", () => {
       expect(waiting).toEqual({ status: "making", steps: steps("active", "waiting", "waiting") });
       expect(failed).toEqual({ status: "failed", error: expect.stringContaining("Try again") });
 
-      await restarted.post("/api/ode", {});
+      await restarted.post("/api/ode", MAKE_ODE);
       expect((await settledOde(restarted.get)).status).toBe("ready");
     });
 
     it("stops waiting after ten minutes, and saves nothing later, for a run the Workflow can no longer report on", async () => {
       const { music, release } = heldMusic();
       const harness = await lyricsHarness(music);
-      await harness.post("/api/ode", {});
+      await harness.post("/api/ode", MAKE_ODE);
       await composingOde(harness.get);
 
       // For example the API key was revoked, so every question to Render is refused.
@@ -480,7 +480,7 @@ describe("making the Ode", () => {
       });
       await post("/api/ledger", { notes: seedNotes });
       const instanceStarts = workflow.holdNextRun();
-      await post("/api/ode", {});
+      await post("/api/ode", MAKE_ODE);
 
       workflow.reportStartedRunsFailed();
       const gaveUp = await json<OdeBody>(await get("/api/ode"));
@@ -515,7 +515,7 @@ describe("making the Ode", () => {
       await patch("/api/lyrics/hook", { text: "We ate at Chipotle, we were there" });
       await patch("/api/lyrics/chorus", { text: "Sing Hotel California to the friends" });
 
-      const refused = await post("/api/ode", {});
+      const refused = await post("/api/ode", MAKE_ODE);
 
       expect(refused.status).toBe(422);
       const { error } = await json<{ error: string }>(refused);
@@ -532,7 +532,7 @@ describe("making the Ode", () => {
       const { music, spy } = countingMusic();
       const { post, patch, get, workflow } = await lyricsHarness(music);
       const instanceStarts = workflow.holdNextRun();
-      expect((await post("/api/ode", {})).status).toBe(202);
+      expect((await post("/api/ode", MAKE_ODE)).status).toBe(202);
 
       await patch("/api/lyrics/hook", { text: "We ate at Chipotle, we were there" });
       instanceStarts();
@@ -545,11 +545,11 @@ describe("making the Ode", () => {
 
     it("still answers 409 for an Ode already made, and the running status for a run in progress, whatever the lyrics say", async () => {
       const { post, patch, get } = await lyricsHarness();
-      await post("/api/ode", {});
+      await post("/api/ode", MAKE_ODE);
       expectReady(await settledOde(get));
       await patch("/api/lyrics/hook", { text: "We ate at Chipotle, we were there" });
 
-      expect((await post("/api/ode", {})).status).toBe(409);
+      expect((await post("/api/ode", MAKE_ODE)).status).toBe(409);
     });
 
     it("makes the Ode once the payer has fixed every flagged line", async () => {
@@ -557,12 +557,12 @@ describe("making the Ode", () => {
       const { post, patch, get } = await lyricsHarness(music);
       await patch("/api/lyrics/verses/Vikram/lines/3", { text: "Key lime pie for nine dollars" });
       await patch("/api/lyrics/chorus", { text: "Sing Hotel California to the friends" });
-      expect((await post("/api/ode", {})).status).toBe(422);
+      expect((await post("/api/ode", MAKE_ODE)).status).toBe(422);
 
       await patch("/api/lyrics/verses/Vikram/lines/3", { text: "Key lime pie at nine under the lights" });
-      expect((await post("/api/ode", {})).status).toBe(422);
+      expect((await post("/api/ode", MAKE_ODE)).status).toBe(422);
       await patch("/api/lyrics/chorus", { text: "Here is to the friends who carried the trip" });
-      const started = await post("/api/ode", {});
+      const started = await post("/api/ode", MAKE_ODE);
       const ode = expectReady(await settledOde(get));
 
       expect(started.status).toBe(202);
@@ -586,7 +586,7 @@ describe("making the Ode", () => {
       });
       await harness.post("/api/ledger", { notes: seedNotes });
 
-      const started = await harness.post("/api/ode", {});
+      const started = await harness.post("/api/ode", MAKE_ODE);
       const failed = await settledOde(harness.get);
 
       expect(started.status).toBe(202);
@@ -602,9 +602,9 @@ describe("making the Ode", () => {
       });
 
       // The saved lyrics are flagged now, so a retry is refused until the payer fixes the line.
-      expect((await harness.post("/api/ode", {})).status).toBe(422);
+      expect((await harness.post("/api/ode", MAKE_ODE)).status).toBe(422);
       await harness.patch("/api/lyrics/verses/Sahiti/lines/1", { text: "Sahiti screamed at the gator and laughed" });
-      expect((await harness.post("/api/ode", {})).status).toBe(202);
+      expect((await harness.post("/api/ode", MAKE_ODE)).status).toBe(202);
       expect((await settledOde(harness.get)).status).toBe("ready");
       expect(spy.composed).toBe(1);
     });
@@ -616,7 +616,7 @@ describe("making the Ode", () => {
     });
     await harness.post("/api/ledger", { notes: seedNotes });
 
-    await harness.post("/api/ode", {});
+    await harness.post("/api/ode", MAKE_ODE);
     const ode = expectReady(await settledOde(harness.get));
 
     expect(verses(ode).map((v) => [v.friend, v.lines.map((l) => l.text)])).toEqual(
@@ -631,7 +631,7 @@ describe("making the Ode", () => {
     await patch("/api/lyrics/verses/Vikram/lines/3", { text: "Key lime pie at nine, the best of the trip" });
     await patch("/api/lyrics/hook", { text: "Oh we were there, always there" });
 
-    await post("/api/ode", {});
+    await post("/api/ode", MAKE_ODE);
     const ode = expectReady(await settledOde(get));
 
     expect(verses(ode)[1]?.lines[2]?.text).toBe("Key lime pie at nine, the best of the trip");
@@ -646,7 +646,7 @@ describe("making the Ode", () => {
 
   it("asks the payer to build the ledger first, and starts nothing, when it is empty or not ready", async () => {
     const empty = await createHarness();
-    const noLedger = await empty.post("/api/ode", {});
+    const noLedger = await empty.post("/api/ode", MAKE_ODE);
     expect(noLedger.status).toBe(422);
     expect((await json<{ error: string }>(noLedger)).error).toContain("Build the ledger first");
     expect(await json<OdeBody>(await empty.get("/api/ode"))).toEqual({ status: "none" });
@@ -659,7 +659,7 @@ describe("making the Ode", () => {
     });
     const unfinished = await createHarness({ claude });
     await unfinished.post("/api/ledger", { notes: "vikram" });
-    const missingAmount = await unfinished.post("/api/ode", {});
+    const missingAmount = await unfinished.post("/api/ode", MAKE_ODE);
     expect(missingAmount.status).toBe(422);
     expect((await json<{ error: string }>(missingAmount)).error).toContain("No amount found for Vikram");
     expect(await json<OdeBody>(await unfinished.get("/api/ode"))).toEqual({ status: "none" });
@@ -673,23 +673,23 @@ describe("making the Ode", () => {
     });
     await harness.post("/api/ledger", { notes: seedNotes });
 
-    await harness.post("/api/ode", {});
+    await harness.post("/api/ode", MAKE_ODE);
     const failed = await settledOde(harness.get);
 
     expect(failed).toEqual({ status: "failed", error: expect.stringContaining("lyrics") });
     expect(await json<{ verses: unknown[] }>(await harness.get("/api/lyrics"))).toEqual({ verses: [], hook: null, chorus: null });
 
     writing = ok(seedLyrics);
-    await harness.post("/api/ode", {});
+    await harness.post("/api/ode", MAKE_ODE);
     expect((await settledOde(harness.get)).status).toBe("ready");
   });
 
   it("refuses to make a second Ode over the first", async () => {
     const { post, get } = await lyricsHarness();
-    await post("/api/ode", {});
+    await post("/api/ode", MAKE_ODE);
     const first = expectReady(await settledOde(get));
 
-    const again = await post("/api/ode", {});
+    const again = await post("/api/ode", MAKE_ODE);
 
     expect(again.status).toBe(409);
     expect((await json<{ error: string }>(again)).error).toContain("already made");
@@ -698,7 +698,7 @@ describe("making the Ode", () => {
 
   it("drops the Ode, and its audio, when new trip notes replace the ledger", async () => {
     const { post, get } = await lyricsHarness();
-    await post("/api/ode", {});
+    await post("/api/ode", MAKE_ODE);
     expectReady(await settledOde(get));
 
     await post("/api/ledger", { notes: seedNotes });
@@ -710,7 +710,7 @@ describe("making the Ode", () => {
   describe("playing the Ode", () => {
     async function madeOde() {
       const harness = await lyricsHarness();
-      await harness.post("/api/ode", {});
+      await harness.post("/api/ode", MAKE_ODE);
       const ode = expectReady(await settledOde(harness.get));
       return { ...harness, ode };
     }
@@ -776,7 +776,7 @@ describe("making the Ode", () => {
       expect((await get("/api/ode/audio")).status).toBe(404);
 
       music.failNextCompose();
-      await post("/api/ode", {});
+      await post("/api/ode", MAKE_ODE);
       await settledOde(get);
 
       expect((await get("/api/ode/audio")).status).toBe(404);

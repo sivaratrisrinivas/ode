@@ -12,7 +12,10 @@ import { err, ok, type Result } from "./result.ts";
 export interface OdeStore {
   /** The saved Ode; undefined until one has been made for the current ledger. */
   read(): Promise<Ode | undefined>;
-  /** The release date saved with the Ode; undefined when there is no Ode or it was made without one. It never changes. */
+  /**
+   * The release date saved with the Ode; undefined when there is no Ode, or when it is one made before a release date was
+   * required (a row from the version before #31). It never changes.
+   */
   releaseDate(): Promise<ReleaseDate | undefined>;
   /** The saved Ode's audio; undefined when there is no Ode. */
   readAudio(): Promise<Uint8Array | undefined>;
@@ -34,12 +37,12 @@ export interface OdeRuns {
   /** The run in progress or the one that failed; undefined when none is kept. */
   current(): Promise<OdeRun | undefined>;
   /**
-   * Record a new run at the first step, replacing a failed one, with the release date the payer promised (if any), which
-   * the saved Ode keeps.
+   * Record a new run at the first step, replacing a failed one, with the release date the payer promised, which the saved Ode
+   * keeps.
    *
    * @returns False, with nothing changed, when an Ode is already saved or a run is already in progress.
    */
-  begin(run: RunId, startedAt: Date, releaseDate: ReleaseDate | undefined): Promise<boolean>;
+  begin(run: RunId, startedAt: Date, releaseDate: ReleaseDate): Promise<boolean>;
   /** Record the Workflow's own ID for a run in progress. Does nothing when `run` is not in progress. */
   attach(run: RunId, workflowRun: WorkflowRunId): Promise<void>;
   /**
@@ -90,8 +93,8 @@ export interface OdeMaker {
   /**
    * Start making the Ode. A run already in progress is not started twice, by this web service process or any other.
    *
-   * @param releaseDate - The date the payer promises the whole Ode will drop, as sent: undefined for none, otherwise it must
-   *   be a date today or later. It is judged only once no Ode exists and no run is in progress, and it is fixed from then on.
+   * @param releaseDate - The date the payer promises the whole Ode will drop, as sent: required, and it must be a real date today
+   *   or later. It is judged only once no Ode exists and no run is in progress, and it is fixed from then on.
    * @returns The status after the request: the run just started or already in progress, or why none could start.
    */
   start(releaseDate: unknown): Promise<Result<OdeStatus, StartOdeError>>;
@@ -187,8 +190,8 @@ export function createOdeMaker(deps: {
     if (seen._tag === "Making") return ok(seen);
 
     // Only now is the release date judged: an Ode or run that exists is answered whatever date this request carries.
-    const date = releaseDate === undefined ? undefined : parseReleaseDate(releaseDate, deps.clock.now());
-    if (date?._tag === "err") return err(date.error);
+    const date = parseReleaseDate(releaseDate, deps.clock.now());
+    if (date._tag === "err") return err(date.error);
 
     // Saved lyrics with a flagged line are refused here. With none saved, the run writes them and checks them itself.
     const saved = await deps.lyrics.read();
@@ -206,7 +209,7 @@ export function createOdeMaker(deps: {
     // One statement checks that there is no Ode and no run in progress, and records this run, so two requests (or a
     // request and a run that is just saving) cannot both start a paid song.
     const run = deps.newRunId();
-    if (!(await deps.runs.begin(run, deps.clock.now(), date?.value))) {
+    if (!(await deps.runs.begin(run, deps.clock.now(), date.value))) {
       // Another request began the run (and was admitted for it), so this one's place is spare.
       await place?.release();
       const current = await status();

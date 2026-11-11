@@ -8,7 +8,7 @@
 // cookie, so its own copy of the Ode) checks that payments, reloads, "Reset demo" and a cleared cookie act on one copy only.
 // Then judges: "Make my own Ode" builds a two-friend Ode from the judge's own notes beside the untouched Seeded Ode, pays its
 // first friend, and goes back; once five new Odes have started that day the sixth judge is told so and stays on the Seeded Ode.
-// The release date is checked on both: the payer picks it at "Make the Ode", every pane reads "N of 3 friends · D days to
+// The release date is checked on both: the payer must pick one at "Make the Ode" (the field is required), every pane reads "N of 3 friends · D days to
 // drop", and moving the fake clock past it (dev-fake's /dev/clock/advance-days) turns it into "Delayed" with the chorus locked.
 // See docs/agents/run.md. Usage: node scripts/drive-fake.mjs [screenshot.png]
 import assert from "node:assert/strict";
@@ -44,8 +44,17 @@ try {
   await page.locator("textarea").fill("Trip notes: Tharun paid for the car, 390 dollars, split four ways.");
   await page.getByRole("button", { name: "Build the ledger" }).click();
   await page.getByRole("button", { name: "Write the lyrics" }).click();
-  await page.getByLabel("Release date").fill(dayIso(22));
-  await page.getByRole("button", { name: "Make the Ode" }).click();
+  // The release date is required: the field starts with a date, and with it cleared the Ode cannot be made.
+  const releaseField = page.getByLabel("Release date");
+  const makeButton = page.getByRole("button", { name: "Make the Ode" });
+  assert.match(await releaseField.inputValue(), /^\d{4}-\d{2}-\d{2}$/, "the release date field has no default");
+  assert.equal(await releaseField.evaluate((input) => input.required), true, "the release date field is not required");
+  await page.waitForFunction(() => [...document.querySelectorAll("button")].some((b) => b.textContent === "Make the Ode" && !b.disabled), null, { timeout: 15_000 });
+  await releaseField.fill("");
+  assert.equal(await makeButton.isDisabled(), true, "the Ode can be made with no release date");
+  await releaseField.fill(dayIso(22));
+  assert.equal(await makeButton.isDisabled(), false, "the Ode cannot be made once a release date is chosen");
+  await makeButton.click();
   await page.getByText("Your Ode").waitFor({ timeout: 30_000 });
   assert.equal(await page.getByLabel("Release date").innerText(), "0 of 3 friends · 22 days to drop", "the payer's page does not show the countdown");
   const link = await page.getByRole("link", { name: /Tharun.s private link/ }).getAttribute("href");

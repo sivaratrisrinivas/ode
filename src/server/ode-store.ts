@@ -174,7 +174,7 @@ export function createOdeStore(sql: Sql, owner: Owner): OdeStore & OdeRuns {
            workflow_run_id = null, failure = null, failure_message = null
          where ode_runs.failure is not null
          returning owner`,
-        [run, startedAt, releaseDate ?? null, owner],
+        [run, startedAt, releaseDate, owner],
       );
       return rows.length > 0;
     },

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { fakeClaudeByTask } from "../src/testing/fakes.ts";
-import { createHarness, pollUntil } from "./harness.ts";
+import { createHarness, MAKE_ODE, pollUntil } from "./harness.ts";
 import { seedExtraction, seedLyrics, seedNotes } from "./seed.ts";
 
 /** What the payer's page and a friend's page are both told about a ready Ode's finish. */
@@ -25,7 +25,7 @@ async function madeOde(extraction: object = seedExtraction) {
   });
   await harness.post("/api/ledger", { notes: seedNotes });
   await harness.post("/api/lyrics", {});
-  await harness.post("/api/ode", {});
+  await harness.post("/api/ode", MAKE_ODE);
   await pollUntil(
     async () => json<{ status: string }>(await harness.get("/api/ode")),
     (ode) => ode.status === "ready",

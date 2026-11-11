@@ -53,11 +53,13 @@ describe("a database from before judges could make their own Ode", () => {
     });
     const asVisitor = (path: string) => api.request(path, { headers: { cookie: `ode_visitor=${visitor}` } });
 
-    const ode = await json<{ status: string; trip: string; sections: { kind: string; payment?: { amountRepaidCents: number; linesUnlocked: number }; friendViewPath?: string }[] }>(
+    const ode = await json<{ status: string; trip: string; release: unknown; sections: { kind: string; payment?: { amountRepaidCents: number; linesUnlocked: number }; friendViewPath?: string }[] }>(
       await asVisitor("/api/ode"),
     );
     expect(ode.status).toBe("ready");
     expect(ode.trip).toBe("Florida '25");
+    // Made before a release date was required, so it keeps having none: no countdown, never delayed.
+    expect(ode.release).toBeNull();
     expect(ode.sections.find((section) => section.kind === "verse")?.payment).toMatchObject({ amountRepaidCents: 5_000, linesUnlocked: 2 });
     expect(ode.sections.find((section) => section.kind === "verse")?.friendViewPath).toBe(`/f/${"a".repeat(64)}`);
     expect((await asVisitor("/api/ode/audio")).status).toBe(200);

@@ -57,7 +57,7 @@ export function OdeStudio({ quiet = false, onFellBack }: { quiet?: boolean; onFe
   const [startError, setStartError] = useState<string | null>(null);
   // Lines flagged in the lyrics preview; the Ode is not made while any is, or before the preview has said.
   const [flagged, setFlagged] = useState<number | null>(null);
-  // The promise to the friends, a month out unless the payer picks another day; it cannot be changed once the Ode is made.
+  // The promise to the friends, a month out unless the payer picks another day; it is required, and cannot be changed once the Ode is made.
   const [releaseDate, setReleaseDate] = useState(() => dateInDays(30));
 
   async function refresh() {
@@ -91,7 +91,7 @@ export function OdeStudio({ quiet = false, onFellBack }: { quiet?: boolean; onFe
       const res = await fetch("/api/ode", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(releaseDate === "" ? {} : { releaseDate }),
+        body: JSON.stringify({ releaseDate }),
       });
       if (res.status === 409) {
         // Already made (in another tab): show it.
@@ -136,12 +136,12 @@ export function OdeStudio({ quiet = false, onFellBack }: { quiet?: boolean; onFe
             {load.status === "failed" && <p role="alert" style={{ color: "#b00020" }}>{load.error}</p>}
             <p>
               <label>
-                Release date <input type="date" value={releaseDate} onChange={(event) => setReleaseDate(event.target.value)} />
+                Release date <input type="date" required value={releaseDate} onChange={(event) => setReleaseDate(event.target.value)} />
               </label>
               <br />
               <small>The day you promise the whole Ode drops. It can’t be changed after you make the Ode.</small>
             </p>
-            <button onClick={() => void make()} disabled={flagged === null || flagged > 0} aria-describedby={flagged !== null && flagged > 0 ? "flagged-why" : undefined}>
+            <button onClick={() => void make()} disabled={releaseDate === "" || flagged === null || flagged > 0} aria-describedby={flagged !== null && flagged > 0 ? "flagged-why" : undefined}>
               {load.status === "failed" ? "Try again" : "Make the Ode"}
             </button>
             {flagged !== null && flagged > 0 && (

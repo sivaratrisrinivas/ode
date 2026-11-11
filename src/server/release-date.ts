@@ -40,7 +40,7 @@ function today(now: Date): number {
 /**
  * Parse the release date the payer chose when making the Ode.
  *
- * @param input - Anything; only a real calendar date written `YYYY-MM-DD` is accepted.
+ * @param input - Anything, `undefined` (none sent) included; only a real calendar date written `YYYY-MM-DD` is accepted.
  * @param now - The current time; the date may be today (UTC) or later, never a day already past.
  * @returns The release date, or `InvalidReleaseDate` saying what to fix.
  */
