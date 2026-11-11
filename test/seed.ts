@@ -74,3 +74,34 @@ export const seedFriendAccounts: Readonly<Record<string, string>> = {
   Vikram: "vikram_vickey10@outlook.com",
   Sahiti: "sahitishastrula1402@gmail.com",
 };
+
+/** A judge's own trip notes: two friends who are not the seed's, so an Own Ode is told apart from the Seeded Ode. */
+export const goaNotes = "Goa '26: Meera covered the villa, I owe her $200. Dev paid for the scooters, $60.";
+
+/** What Claude returns for `goaNotes`. */
+export const goaExtraction = {
+  friends: [
+    { name: "Meera", amountOwedCents: 20_000, amountIsEstimate: false, insideJoke: "Haggled with a scooter shop owner and lost" },
+    { name: "Dev", amountOwedCents: 6_000, amountIsEstimate: false, insideJoke: "Fell asleep on the beach and got sunburnt in stripes" },
+  ],
+  groupCosts: [],
+  trip: "Goa '26",
+};
+
+/**
+ * What Claude writes for any ledger: the seed lyrics for the seed's friends, four plain lines for anyone else.
+ *
+ * @param input - The `write-lyrics` request's input: the JSON of the friends to write for.
+ */
+export function lyricsForFriends(input: string) {
+  const { friends }: { friends: { name: string }[] } = JSON.parse(input);
+  const sung = new Map(seedLyrics.friends.map((friend) => [friend.name, friend.lines]));
+  return {
+    friends: friends.map(({ name }) => ({
+      name,
+      lines: sung.get(name) ?? [`${name} laughed the whole way there`, "We sang along to the radio", "The sun went down slow", "And nobody wanted to go home"],
+    })),
+    hook: seedLyrics.hook,
+    chorus: seedLyrics.chorus,
+  };
+}

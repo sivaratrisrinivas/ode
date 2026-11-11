@@ -138,7 +138,7 @@ describe("the friend view", () => {
     const view = await viewFor(harness, THARUN);
 
     expect(view.ode.status).toBe("ready");
-    expect(view.ode.audioUrl).toBe("/api/ode/audio");
+    expect(view.ode.audioUrl).toMatch(/^\/api\/friends\/[0-9a-f]{64}\/audio$/);
     expect(view.ode.sections?.map((section) => section.kind)).toEqual(["intro", "verse", "hook", "verse", "hook", "verse", "hook", "chorus"]);
     expect(lockedLines(view, THARUN)).toEqual([true, true, true, true]);
     expect(lockedLines(view, VIKRAM)).toEqual([false, false, true, true]);

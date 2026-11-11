@@ -2,7 +2,7 @@ import { PGlite } from "@electric-sql/pglite";
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
-import { seedExtraction, seedFriendAccounts, seedLyrics } from "../../test/seed.ts";
+import { goaExtraction, lyricsForFriends, seedExtraction, seedFriendAccounts, seedLyrics } from "../../test/seed.ts";
 import { createApi } from "../server/app.ts";
 import { friendAccounts } from "../server/friend-accounts.ts";
 import { createOdeJob } from "../server/ode-job.ts";
@@ -30,8 +30,9 @@ if (process.env["FAKE_FLAGGED"] === "1") {
   if (sahiti) sahiti.lines[0] = "Sahiti screamed at the gator for ninety bucks";
 }
 const claude = fakeClaudeByTask({
-  "extract-ledger": () => seedExtraction,
-  "write-lyrics": () => written,
+  // Notes that mention Goa are a judge's own: two friends who are not the seed's.
+  "extract-ledger": (input) => (input.includes("Goa") ? goaExtraction : seedExtraction),
+  "write-lyrics": (input) => (input.includes("Meera") ? lyricsForFriends(input) : written),
   "rewrite-line": (input) => {
     const request: { line: string } = JSON.parse(input);
     return { line: request.line.replace("ninety", "fifty") };

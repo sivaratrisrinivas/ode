@@ -6,6 +6,8 @@
 // right pane between the friends, that the chorus stays locked on both panes until every friend is fully repaid and then
 // reads "Full Ode dropped · Florida '25", and that the panes stack on a phone. Last, a second browser context (its own
 // cookie, so its own copy of the Ode) checks that payments, reloads, "Reset demo" and a cleared cookie act on one copy only.
+// Then judges: "Make my own Ode" builds a two-friend Ode from the judge's own notes beside the untouched Seeded Ode, pays its
+// first friend, and goes back; once five new Odes have started that day the sixth judge is told so and stays on the Seeded Ode.
 // The release date is checked on both: the payer picks it at "Make the Ode", every pane reads "N of 3 friends · D days to
 // drop", and moving the fake clock past it (dev-fake's /dev/clock/advance-days) turns it into "Delayed" with the chorus locked.
 // See docs/agents/run.md. Usage: node scripts/drive-fake.mjs [screenshot.png]
@@ -223,6 +225,73 @@ try {
   await repaid(other.frameLocator('iframe[title="Friend view"]'), 0);
   console.log("visitor copies: Reset demo cleared only its own copy, and a cleared cookie gave a fresh one");
   await otherContext.close();
+
+  // Judges' own Odes: a visitor on the Seeded Ode can make a new one from their own notes (two friends here, paid through the
+  // first two sandbox accounts), without touching anyone else's. The fake clock was moved past the earlier release dates, so
+  // these are set from the clock's day now.
+  const goaNotes = "Goa '26: Meera covered the villa, I owe her $200. Dev paid for the scooters, $60.";
+  const releaseOn = dayIso(11 + 5);
+  const judgeContext = await browser.newContext({ viewport: { width: 900, height: 1400 } });
+  const judge = await judgeContext.newPage();
+  await judge.goto(`http://localhost:${port}/`);
+  const judgeLeft = judge.frameLocator('iframe[title="Payer"]');
+  const judgeRight = judge.frameLocator('iframe[title="Friend view"]');
+  await judgeLeft.getByText("Your Ode").waitFor({ timeout: 30_000 });
+  assert.equal(await judge.getByRole("button", { name: "Back to the Seeded Ode" }).count(), 0, "a visitor starts on the Seeded Ode, not on their own");
+  await judge.getByRole("button", { name: "Make my own Ode" }).click();
+  await judge.getByText("Your own Ode").waitFor();
+  await judgeLeft.locator("textarea").fill(goaNotes);
+  await judgeLeft.getByRole("button", { name: "Build the ledger" }).click();
+  await judgeLeft.getByText("Meera").first().waitFor();
+  await judgeLeft.getByRole("button", { name: "Write the lyrics" }).click();
+  await judgeLeft.getByLabel("Release date").fill(releaseOn);
+  await judgeLeft.getByRole("button", { name: "Make the Ode" }).click();
+  await judgeLeft.getByText("Your Ode").waitFor({ timeout: 30_000 });
+  await judgeRight.getByRole("heading", { name: "An Ode for Meera" }).waitFor({ timeout: 15_000 });
+  assert.equal(await judge.getByRole("button", { name: "Tharun" }).count(), 0, "the judge's picker offers a friend of the Seeded Ode");
+  assert.equal(await judge.getByRole("button", { name: "Dev" }).count(), 1, "the judge's picker lacks their second friend");
+  await judgeLeft.getByLabel(/Pay Meera/).fill("100");
+  await judgeLeft.getByRole("button", { name: "Pay Meera" }).click();
+  const judgePaidAt = Date.now();
+  await judgeRight.getByRole("status").waitFor();
+  const judgeMs = Date.now() - judgePaidAt;
+  console.log(`own Ode: paying Meera unlocked her lines in the judge's friend pane after ${judgeMs} ms`);
+  assert.ok(judgeMs < 2500, `the judge's friend pane took ${judgeMs} ms to show the unlock`);
+  await judge.screenshot({ path: `own-${screenshot}`, fullPage: true });
+
+  // The Seeded Ode is as it was for everyone else: the first browser still shows its three friends.
+  await page.reload();
+  assert.equal(await page.getByRole("button", { name: "Meera" }).count(), 0, "the judge's friend leaked into another browser's Seeded Ode");
+  await page.getByRole("button", { name: "Tharun" }).waitFor();
+  console.log("own Ode: the judge's Ode with Meera and Dev sits beside the Seeded Ode, which still shows Tharun, Vikram and Sahiti");
+
+  // Back to the Seeded Ode: the judge's own Ode is forgotten.
+  await judge.getByRole("button", { name: "Back to the Seeded Ode" }).click();
+  await judge.getByRole("button", { name: "Make my own Ode" }).waitFor();
+  await judge.getByRole("button", { name: "Tharun" }).waitFor({ timeout: 15_000 });
+  console.log("own Ode: Back to the Seeded Ode returned the judge to Tharun, Vikram and Sahiti");
+
+  // The day's cap: four more new Odes start (through the API, each as a browser of its own), which with the judge's is five.
+  // The sixth judge is told, and stays on the Seeded Ode.
+  for (let n = 0; n < 4; n += 1) {
+    const maker = await browser.newContext();
+    const call = async (method, path, data) => {
+      const res = await maker.request.fetch(`http://localhost:${port}${path}`, { method, ...(data ? { data } : {}) });
+      assert.ok(res.ok(), `${method} ${path} answered ${res.status()}`);
+    };
+    await call("POST", "/api/judge-ode");
+    await call("POST", "/api/ledger", { notes: goaNotes });
+    await call("POST", "/api/lyrics", {});
+    await call("POST", "/api/ode", { releaseDate: releaseOn });
+    await maker.close();
+  }
+  await judge.getByRole("button", { name: "Make my own Ode" }).click();
+  const capNotice = judge.getByRole("alert").filter({ hasText: "new Odes have all been made" });
+  await capNotice.waitFor({ timeout: 15_000 });
+  console.log(`own Ode: the sixth new Ode of the day was told: "${await capNotice.innerText()}"`);
+  assert.equal(await judge.getByRole("button", { name: "Back to the Seeded Ode" }).count(), 0, "the judge is on their own Ode past the cap");
+  await judge.getByRole("button", { name: "Tharun" }).waitFor();
+  await judgeContext.close();
 } finally {
   await browser.close();
 }
