@@ -83,17 +83,20 @@ function friendSectionsJson(sections: readonly Section[], standings: readonly Fr
  *
  * @param friend - The friend the link belongs to.
  * @param standings - Every friend's standing; only `friend`'s reaches the result.
+ * @param canShare - Whether the friend may share their verse; the page offers the share button only then.
  * @param ode - Renders the Ode's status given how to show a ready Ode's sections.
  */
 export function friendViewJson(
   friend: string,
   standings: readonly FriendStanding[],
+  canShare: boolean,
   ode: (sections: (sections: readonly Section[]) => unknown) => unknown,
 ) {
   const own = standings.find((candidate) => candidate.friend === friend);
   return {
     friend,
     you: own === undefined ? null : youJson(own),
+    canShare,
     ode: ode((sections) => friendSectionsJson(sections, standings, friend)),
   };
 }

@@ -12,6 +12,7 @@
 // drop", and moving the fake clock past it (dev-fake's /dev/clock/advance-days) turns it into "Delayed" with the chorus locked.
 // See docs/agents/run.md. Usage: node scripts/drive-fake.mjs [screenshot.png]
 import assert from "node:assert/strict";
+import { writeFile } from "node:fs/promises";
 // PLAYWRIGHT_CORE overrides where playwright-core is imported from (it is not in node_modules).
 const { chromium } = await import(process.env.PLAYWRIGHT_CORE ?? "/home/srinivas/.bun/install/cache/playwright-core@1.63.0@@@1/index.mjs");
 
@@ -52,6 +53,8 @@ try {
   await friend.goto(`http://localhost:${port}${link}`);
   await friend.getByRole("heading", { name: "An Ode for Tharun" }).waitFor();
   console.log("friend sees:", await friend.getByLabel("Your money").innerText());
+  // No line is unlocked yet, so there is nothing to share.
+  assert.equal(await friend.getByRole("button", { name: "Share my verse" }).count(), 0, "a friend with no unlocked line is offered the share button");
   assert.equal(await friend.getByLabel("Release date").innerText(), "0 of 3 friends · 22 days to drop", "the friend's page does not show the countdown");
   console.log("release date: both pages read", JSON.stringify(await friend.getByLabel("Release date").innerText()));
 
@@ -67,6 +70,60 @@ try {
   await page.screenshot({ path: screenshot });
   await friend.screenshot({ path: `friend-${screenshot}` });
   console.log("play() asked to start at (s):", await page.evaluate(() => window.__plays));
+
+  // The verse share: with two lines unlocked Tharun's tab offers the button, and the link it makes opens for a stranger (a
+  // new browser context, so a visitor with nothing paid) as a page with only those two lines, whose HTML carries the
+  // link-preview card a chat app reads, with a real image behind it.
+  const shareButton = friend.getByRole("button", { name: "Share my verse" });
+  await shareButton.waitFor({ timeout: 5_000 });
+  await shareButton.click();
+  const shareUrl = await friend.getByLabel("Your share link").inputValue();
+  assert.match(shareUrl, new RegExp(`^http://localhost:${port}/s/[0-9a-f]{64}$`), "the share link is not a /s/ link");
+  assert.ok(!shareUrl.includes((link ?? "").replace("/f/", "")), "the share link carries the friend's private token");
+  await friend.screenshot({ path: `share-button-${screenshot}` });
+
+  const strangerContext = await browser.newContext({ viewport: { width: 900, height: 1000 } });
+  const stranger = await strangerContext.newPage();
+  await stranger.addInitScript(() => {
+    window.__plays = [];
+    const play = HTMLMediaElement.prototype.play;
+    HTMLMediaElement.prototype.play = function () {
+      window.__plays.push(this.currentTime);
+      return play.call(this).catch(() => {});
+    };
+  });
+  await stranger.goto(shareUrl);
+  await stranger.getByRole("heading", { name: "An Ode for Tharun · Florida '25" }).waitFor({ timeout: 10_000 });
+  const shared = await stranger.locator("main").innerText();
+  for (const line of ["Tharun held the wheel while the whole car dreamed", "Headlights on the highway in a long quiet stream"]) {
+    assert.ok(shared.includes(line), `the share page is missing the unlocked line "${line}"`);
+  }
+  for (const hidden of ["Key West was waiting at the end of the night", "He got us there sleeping", "Vikram", "Sahiti", "Here is to the friends", "$"]) {
+    assert.ok(!shared.includes(hidden), `the share page shows "${hidden}"`);
+  }
+  const playedAt = Date.now();
+  await stranger.getByRole("button", { name: /^Play Tharun/ }).click();
+  // The fake audio is junk bytes, so the page cannot decode the pieces and falls back to the plain audio element, which is asked to play.
+  await stranger.waitForFunction(() => window.__plays.length >= 1, undefined, { timeout: 5_000 });
+  const playMs = Date.now() - playedAt;
+  assert.ok(playMs < 5_000, `the share page took ${playMs} ms to start playing`);
+  await stranger.screenshot({ path: `share-${screenshot}` });
+
+  // What a chat app does: fetch the link without running any script, read the tags, fetch the image they name.
+  const crawled = await (await stranger.request.get(shareUrl)).text();
+  const tags = new Map([...crawled.matchAll(/<meta (?:property|name)="([^"]+)" content="([^"]*)"/g)].map(([, key, content]) => [key, content.replaceAll("&#39;", "'").replaceAll("&amp;", "&")]));
+  assert.equal(tags.get("og:title"), "An Ode for Tharun · Florida '25", "og:title");
+  assert.equal(tags.get("twitter:card"), "summary_large_image");
+  assert.equal(tags.get("og:image:width"), "1200");
+  const image = await stranger.request.get(tags.get("og:image") ?? assert.fail("no og:image"));
+  const png = await image.body();
+  assert.equal(image.status(), 200);
+  assert.equal(image.headers()["content-type"], "image/png");
+  assert.deepEqual([...png.subarray(0, 8)], [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], "og:image is not a PNG");
+  assert.deepEqual([png.readUInt32BE(16), png.readUInt32BE(20)], [1200, 630], "og:image is not 1200 x 630");
+  await writeFile(`card-${screenshot}`, png);
+  console.log(`verse share: ${shareUrl} shows two lines, played in ${playMs} ms, and its card ("${tags.get("og:title")}", ${png.length} byte PNG) is in card-${screenshot}`);
+  await strangerContext.close();
 
   // Building the ledger again ends every friend's link; the open tab must stop showing the Ode, not keep it stale.
   await page.request.post(`http://localhost:${port}/api/ledger`, { data: { notes: "Trip notes: Tharun paid for the car, 390 dollars, split four ways." } });

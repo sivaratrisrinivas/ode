@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactElement } from "react";
 import { Cassette, type ReadyOde, type Release, type Section, type VerseSection } from "./Cassette.tsx";
+import { failureMessage, UNREACHABLE } from "./messages.tsx";
 
 /** What a friend's page is told about their own money. */
 interface You {
@@ -22,6 +23,8 @@ type FriendOde =
 interface FriendViewState {
   friend: string;
   you: You | null;
+  /** The server's word that the friend has a line unlocked and so may share their verse. */
+  canShare: boolean;
   ode: FriendOde;
 }
 
@@ -41,6 +44,53 @@ function playable(ode: FriendOde): ReadyOde | null {
     release: ode.release,
     sections: ode.sections.map((section) => (section.kind === "verse" ? { ...section, payment: null } : section)),
   };
+}
+
+/** The share button and, once pressed, the link to post: the server makes the share from what is unlocked right now. */
+function ShareVerse({ token, friend }: { token: string; friend: string }): ReactElement {
+  const [link, setLink] = useState<string | null>(null);
+  const [problem, setProblem] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  async function share() {
+    setProblem(null);
+    setCopied(false);
+    try {
+      const res = await fetch(`/api/friends/${encodeURIComponent(token)}/share`, { method: "POST" });
+      if (!res.ok) return setProblem(await failureMessage(res));
+      const made: { sharePath: string } = await res.json();
+      const url = `${location.origin}${made.sharePath}`;
+      setLink(url);
+      // Where the device has a share sheet, offer it; the link stays on the page either way.
+      if (typeof navigator.share === "function") await navigator.share({ title: `An Ode for ${friend}`, url }).catch(() => undefined);
+    } catch {
+      setProblem(UNREACHABLE);
+    }
+  }
+
+  async function copy() {
+    if (link === null) return;
+    try {
+      await navigator.clipboard.writeText(link);
+      setCopied(true);
+    } catch {
+      // Clipboard access can be refused; the link is selectable in the field.
+    }
+  }
+
+  return (
+    <section aria-label="Share your verse">
+      <button onClick={() => void share()}>Share my verse</button>
+      {problem !== null && <p role="alert" style={{ color: "#b00020" }}>{problem}</p>}
+      {link !== null && (
+        <p>
+          <input readOnly aria-label="Your share link" value={link} onFocus={(event) => event.currentTarget.select()} style={{ width: "70%" }} />{" "}
+          <button onClick={() => void copy()}>{copied ? "Copied" : "Copy link"}</button>{" "}
+          <a href={link}>Open</a>
+        </p>
+      )}
+    </section>
+  );
 }
 
 /**
@@ -95,6 +145,7 @@ export function FriendView({ token }: { token: string }): ReactElement {
           </p>
         </section>
       )}
+      {load.view.canShare && <ShareVerse token={token} friend={friend} />}
       {load.ode !== null ? (
         <Cassette ode={load.ode} title="The Ode" />
       ) : (

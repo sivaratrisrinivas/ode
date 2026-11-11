@@ -84,7 +84,7 @@ An Ode whose release date has passed with friends still unpaid. The chorus stays
 A friend's private page: the whole Ode with locked lines muffled, and only that friend's own amounts.
 
 **Verse share**:
-A short song a friend can share: intro, that friend's unlocked lines, the hook, and the chorus only once dropped. Its card reads "An Ode for [name]".
+A short song a friend can share: intro, that friend's unlocked lines, the hook, and the chorus only once dropped. A friend with no unlocked line cannot share. It has a link of its own (`/s/<token>`) that says nothing about the friend's private page, and it is fixed when the friend makes it: later unlocks or the drop need a new share. Its card reads "An Ode for [name] · [trip]".
 _Avoid_: Mini song, share card, Ode for X
 
 ## Demo

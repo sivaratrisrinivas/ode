@@ -153,6 +153,19 @@ async function createTables(sql: Queryable): Promise<void> {
        owner text not null default '${SEEDED}'
      )`,
   );
+  // A verse share is cut from the Ode when it is opened; this keeps only what the friend chose to put in it, under a link of its
+  // own that says nothing about the friend's private page. It cascades away with the friend when the ledger is replaced.
+  await sql.query(
+    `create table if not exists verse_shares (
+       token text primary key default replace(gen_random_uuid()::text || gen_random_uuid()::text, '-', ''),
+       owner text not null,
+       friend text not null,
+       lines_unlocked integer not null check (lines_unlocked between 1 and 4),
+       with_chorus boolean not null,
+       unique (owner, friend, lines_unlocked, with_chorus),
+       foreign key (owner, friend) references ledger_friends (owner, friend) on delete cascade
+     )`,
+  );
   // The visitors who are making their own Ode instead of looking at the Seeded Ode.
   await sql.query("create table if not exists judge_odes (visitor text primary key)");
   // Each new Ode a judge started making, for the day's cap. Kept after the judge's Ode goes, since its song was already paid for.

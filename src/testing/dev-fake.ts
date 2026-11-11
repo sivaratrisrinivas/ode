@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { PGlite } from "@electric-sql/pglite";
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
@@ -46,6 +47,7 @@ const api = createApi({
   workflow: fakeWorkflow(createOdeJob({ sql, claude, music })),
   friendAccounts: friendAccounts(seedFriendAccounts),
   paypalClientId: undefined,
+  indexHtml: readFileSync("./dist/index.html", "utf8"),
 });
 
 const app = new Hono();

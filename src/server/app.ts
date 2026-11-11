@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { Hono, type Context } from "hono";
-import { parseByteRange } from "./byte-range.ts";
+import { audioResponse as serveAudio } from "./audio-response.ts";
 import { pairedInOrder, type FriendAccounts } from "./friend-accounts.ts";
 import { eventStream, friendViewJson, friendViewPath, linkOwner, lockedSections, type UnknownLink } from "./friend-view.ts";
 import { parseRowEdit, rowWarnings, type LedgerRow } from "./ledger.ts";
@@ -21,7 +21,11 @@ import type { Section } from "./ode.ts";
 import type { OdeWorkflow, Ports, Sql } from "./ports.ts";
 import { ok, type Result } from "./result.ts";
 import * as TripNotes from "./trip-notes.ts";
+import { BARE_SHELL } from "./share-page.ts";
 import { chorusDropped, releaseStatus } from "./unlock.ts";
+import { createVerseShareStore } from "./verse-share-store.ts";
+import { mountVerseShares } from "./verse-share-routes.ts";
+import { canShareVerse } from "./verse-share.ts";
 import { visitorMiddleware, type VisitorEnv } from "./visitor.ts";
 import type { VisitorId } from "./visitor-id.ts";
 
@@ -224,29 +228,19 @@ interface Scope {
 function audioResponse(c: Context, audio: Uint8Array | undefined): Response {
   if (audio === undefined) return c.json({ error: "There is no Ode to play yet." }, 404);
 
-  const headers = { "content-type": "audio/mpeg", "accept-ranges": "bytes" };
-  const range = parseByteRange(c.req.header("range"), audio.byteLength);
-  if (range._tag === "err") return c.body(null, 416, { ...headers, "content-range": `bytes */${audio.byteLength}` });
-  // A copy, because a response body must be backed by a plain ArrayBuffer and the database's bytes may not be.
-  if (range.value === undefined) return c.body(new Uint8Array(audio), 200, { ...headers, "content-length": String(audio.byteLength) });
-
-  const { start, end } = range.value;
-  return c.body(new Uint8Array(audio.subarray(start, end + 1)), 206, {
-    ...headers,
-    "content-length": String(end - start + 1),
-    "content-range": `bytes ${start}-${end}/${audio.byteLength}`,
-  });
+  return serveAudio(c, audio);
 }
 
 /**
  * The HTTP API: the one seam the tests and the browser both use.
  *
  * @param deps - The database, the external-service ports the API calls itself (Eleven Music is called only by
- *   the Workflow task), the Workflow that makes the Ode, the PayPal accounts that pay the friends, and the PayPal
- *   client ID the page loads PayPal's buttons with (undefined when none is configured).
- * @returns A Hono app serving `/api/*`. Every request it sees, the page's own included, is attributed to a visitor by
- *   cookie, and a first visit sets that cookie. A visitor works on the Seeded Ode until they start their own
- *   (`/api/judge-ode`), and then every request of theirs reads and writes their own Ode.
+ *   the Workflow task), the Workflow that makes the Ode, the PayPal accounts that pay the friends, the PayPal
+ *   client ID the page loads PayPal's buttons with (undefined when none is configured), and the built page's
+ *   `index.html`, which a verse share's page carries its preview card in (a bare page when none is given).
+ * @returns A Hono app serving `/api/*` and the verse share pages and cards under `/s/`. Every request it sees, the page's own
+ *   included, is attributed to a visitor by cookie, and a first visit sets that cookie. A visitor works on the Seeded Ode
+ *   until they start their own (`/api/judge-ode`), and then every request of theirs reads and writes their own Ode.
  */
 export function createApi({
   sql,
@@ -254,12 +248,14 @@ export function createApi({
   workflow,
   friendAccounts,
   paypalClientId,
+  indexHtml = BARE_SHELL,
 }: {
   sql: Sql;
   ports: Pick<Ports, "clock" | "claude" | "paypal">;
   workflow: OdeWorkflow;
   friendAccounts: FriendAccounts;
   paypalClientId: string | undefined;
+  indexHtml?: string;
 }): Hono<VisitorEnv> {
   const api = new Hono<VisitorEnv>();
   api.use("*", visitorMiddleware);
@@ -457,7 +453,8 @@ export function createApi({
     const { owner, friend } = holder.value;
     const scope = scopeFor(owner);
     const [status, finish] = await Promise.all([scope.maker.status(), finishOf(scope, copyOf(owner, visitor), `/api/friends/${token}/audio`)]);
-    return ok(friendViewJson(friend, finish.standings, (sections) => odeJson(status, finish, sections)));
+    const canShare = status._tag === "Ready" && canShareVerse(finish.standings.find((standing) => standing.friend === friend));
+    return ok(friendViewJson(friend, finish.standings, canShare, (sections) => odeJson(status, finish, sections)));
   }
 
   api.get("/api/friends/:token", async (c) => {
@@ -473,6 +470,8 @@ export function createApi({
     const first = await friendView(token, visitor);
     return first._tag === "err" ? c.json({ error: first.error.message }, 404) : eventStream(first.value, () => friendView(token, visitor));
   });
+
+  mountVerseShares(api, { holderOf: (token) => findLinkHolder(sql, token), scopeFor, shares: createVerseShareStore(sql), indexHtml });
 
   // "Reset demo": the visitor's copy goes back to unpaid, for a retake. The Ode itself, its audio and every other
   // visitor's copy are untouched.
