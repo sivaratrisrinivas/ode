@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { Hono, type Context } from "hono";
 import { parseByteRange } from "./byte-range.ts";
 import type { FriendAccounts } from "./friend-accounts.ts";
-import { eventStream, friendViewJson, friendViewPath, linkOwner, withLocks, type UnknownLink } from "./friend-view.ts";
+import { eventStream, friendViewJson, friendViewPath, linkOwner, withChorusLock, withLocks, type UnknownLink } from "./friend-view.ts";
 import { parseRowEdit, rowWarnings, type LedgerRow } from "./ledger.ts";
 import { editLedgerRow, proposeLedger, type ProposeLedgerError, type StoredLedger } from "./ledger-service.ts";
 import { createLedgerStore } from "./ledger-store.ts";
@@ -19,6 +19,7 @@ import type { Section } from "./ode.ts";
 import type { OdeWorkflow, Ports, Sql } from "./ports.ts";
 import { ok, type Result } from "./result.ts";
 import * as TripNotes from "./trip-notes.ts";
+import { chorusDropped } from "./unlock.ts";
 
 function field(body: unknown, name: string): unknown {
   return typeof body === "object" && body !== null ? Reflect.get(body, name) : undefined;
@@ -120,10 +121,11 @@ function standingJson(standing: FriendStanding) {
 
 /**
  * The Ode's sections for the payer's page: each verse says which of its lines are still locked and where its friend
- * stands. A friend with no standing has every line locked.
+ * stands, and the chorus says whether it has dropped. A friend with no standing has every line locked.
  */
 function sectionsJson(sections: readonly Section[], standings: readonly FriendStanding[], tokens: ReadonlyMap<string, string>) {
   return sections.map((section) => {
+    if (section.kind === "chorus") return withChorusLock(section, standings);
     if (section.kind !== "verse") return section;
     const standing = standings.find((candidate) => candidate.friend === section.friend);
     return {
@@ -135,8 +137,11 @@ function sectionsJson(sections: readonly Section[], standings: readonly FriendSt
   });
 }
 
-/** The Ode's status as JSON; `sections` decides what each reader sees of a ready Ode, so the payer's and a friend's pages share the rest. */
-function odeJson(status: OdeStatus, sections: (sections: readonly Section[]) => unknown) {
+/**
+ * The Ode's status as JSON; `sections` decides what each reader sees of a ready Ode, so the payer's and a friend's pages share the
+ * rest, including whether the chorus has dropped (`dropped`) and the trip it names.
+ */
+function odeJson(status: OdeStatus, finish: { standings: readonly FriendStanding[]; trip: string }, sections: (sections: readonly Section[]) => unknown) {
   switch (status._tag) {
     case "NotMade":
       return { status: "none" };
@@ -145,7 +150,14 @@ function odeJson(status: OdeStatus, sections: (sections: readonly Section[]) => 
     case "Failed":
       return { status: "failed", error: makeFailureMessage(status.failure) };
     case "Ready":
-      return { status: "ready", durationMs: status.ode.durationMs, audioUrl: "/api/ode/audio", sections: sections(status.ode.sections) };
+      return {
+        status: "ready",
+        durationMs: status.ode.durationMs,
+        audioUrl: "/api/ode/audio",
+        trip: finish.trip,
+        dropped: chorusDropped(finish.standings),
+        sections: sections(status.ode.sections),
+      };
   }
 }
 
@@ -276,8 +288,8 @@ export function createApi({
 
   /** The Ode as the payer's page sees it: each verse with its friend's standing and private link. */
   async function payerOde(status: OdeStatus) {
-    const [standings, tokens] = await Promise.all([payments.standings(), store.linkTokens()]);
-    return odeJson(status, (sections) => sectionsJson(sections, standings, tokens));
+    const [standings, tokens, trip] = await Promise.all([payments.standings(), store.linkTokens(), store.trip()]);
+    return odeJson(status, { standings, trip }, (sections) => sectionsJson(sections, standings, tokens));
   }
 
   api.get("/api/ode", async (c) => c.json(await payerOde(await odeMaker.status())));
@@ -343,8 +355,8 @@ export function createApi({
   async function friendView(token: string): Promise<Result<ReturnType<typeof friendViewJson>, UnknownLink>> {
     const friend = linkOwner(await store.friendForToken(token));
     if (friend._tag === "err") return friend;
-    const [status, standings] = await Promise.all([odeMaker.status(), payments.standings()]);
-    return ok(friendViewJson(friend.value, standings, (sections) => odeJson(status, sections)));
+    const [status, standings, trip] = await Promise.all([odeMaker.status(), payments.standings(), store.trip()]);
+    return ok(friendViewJson(friend.value, standings, (sections) => odeJson(status, { standings, trip }, sections)));
   }
 
   api.get("/api/friends/:token", async (c) => {

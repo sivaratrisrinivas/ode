@@ -1,4 +1,4 @@
-import type { AmountStatus, LedgerRow } from "./ledger.ts";
+import { DEFAULT_TRIP, type AmountStatus, type LedgerRow } from "./ledger.ts";
 import type { LedgerStore, StoredLedger } from "./ledger-service.ts";
 import type { Sql } from "./ports.ts";
 
@@ -31,10 +31,11 @@ const selectFriends = "select friend, amount_owed_cents, amount_status, inside_j
  */
 export function createLedgerStore(sql: Sql): LedgerStore {
   async function read(): Promise<StoredLedger> {
-    const meta = await sql.query<{ notes: string; warnings: string[] }>("select notes, warnings from ledger where id = 1");
+    const meta = await sql.query<{ notes: string; trip: string; warnings: string[] }>("select notes, trip, warnings from ledger where id = 1");
     const friends = await sql.query<FriendRecord>(selectFriends);
     return {
       notes: meta.rows[0]?.notes ?? "",
+      trip: meta.rows[0]?.trip ?? DEFAULT_TRIP,
       warnings: meta.rows[0]?.warnings ?? [],
       rows: friends.rows.map(toRow),
     };
@@ -43,13 +44,19 @@ export function createLedgerStore(sql: Sql): LedgerStore {
   return {
     read,
 
+    async trip() {
+      const { rows } = await sql.query<{ trip: string }>("select trip from ledger where id = 1");
+      return rows[0]?.trip ?? DEFAULT_TRIP;
+    },
+
     async replace(ledger) {
       await sql.transaction(async (tx) => {
         // Delete, then insert, so rows that reference the old ledger (the lyrics) cascade away.
         await tx.query("delete from ledger_friends");
         await tx.query("delete from ledger");
-        await tx.query("insert into ledger (id, notes, warnings) values (1, $1, $2::jsonb)", [
+        await tx.query("insert into ledger (id, notes, trip, warnings) values (1, $1, $2, $3::jsonb)", [
           ledger.notes,
+          ledger.trip,
           JSON.stringify(ledger.warnings),
         ]);
         for (const [position, row] of ledger.rows.entries()) {

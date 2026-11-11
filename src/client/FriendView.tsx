@@ -16,7 +16,7 @@ type FriendOde =
   | { status: "none" }
   | { status: "making"; steps: { name: string; state: string }[] }
   | { status: "failed"; error: string }
-  | { status: "ready"; durationMs: number; audioUrl: string; sections: (Exclude<Section, VerseSection> | FriendVerse)[] };
+  | { status: "ready"; durationMs: number; audioUrl: string; trip: string; dropped: boolean; sections: (Exclude<Section, VerseSection> | FriendVerse)[] };
 
 /** What `GET /api/friends/:token` and each `state` event carry. */
 interface FriendViewState {
@@ -36,6 +36,8 @@ function playable(ode: FriendOde): ReadyOde | null {
   return {
     durationMs: ode.durationMs,
     audioUrl: ode.audioUrl,
+    trip: ode.trip,
+    dropped: ode.dropped,
     sections: ode.sections.map((section) => (section.kind === "verse" ? { ...section, payment: null } : section)),
   };
 }

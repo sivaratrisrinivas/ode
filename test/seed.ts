@@ -30,6 +30,7 @@ export const seedExtraction = {
     },
   ],
   groupCosts: [{ description: "Parking in Orlando", amountCents: 3000 }],
+  trip: "Florida '25",
 };
 
 /** What Claude writes for the seed ledger: 4 clean lines per friend, a hook and a chorus. */
