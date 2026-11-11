@@ -17,6 +17,8 @@ export async function migrate(sql: Sql): Promise<void> {
        warnings jsonb not null default '[]'
      )`,
   );
+  // Ledgers saved before #30 have no trip name; they read as "Our trip".
+  await sql.query(`alter table ledger add column if not exists trip text not null default 'Our trip'`);
   await sql.query(
     `create table if not exists ledger_friends (
        friend text primary key,

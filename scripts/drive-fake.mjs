@@ -3,7 +3,8 @@
 // how long the friend's open tab took to show the unlock, and where playback was asked to start, and saves a
 // screenshot of each tab (the friend's is saved beside it, as friend-<name>). Then it opens /split, the payer's page
 // beside a friend's, and checks that a payment on the left unlocks the line on the right, that the picker switches the
-// right pane between the friends, and that the panes stack on a phone. See docs/agents/run.md. Usage: node scripts/drive-fake.mjs [screenshot.png]
+// right pane between the friends, that the chorus stays locked on both panes until every friend is fully repaid and then
+// reads "Full Ode dropped · Florida '25", and that the panes stack on a phone. See docs/agents/run.md. Usage: node scripts/drive-fake.mjs [screenshot.png]
 import assert from "node:assert/strict";
 // PLAYWRIGHT_CORE overrides where playwright-core is imported from (it is not in node_modules).
 const { chromium } = await import(process.env.PLAYWRIGHT_CORE ?? "/home/srinivas/.bun/install/cache/playwright-core@1.63.0@@@1/index.mjs");
@@ -87,6 +88,35 @@ try {
     await right.getByRole("heading", { name: `An Ode for ${name}` }).waitFor({ timeout: 15_000 });
   }
   console.log("split screen: the picker switched the right pane between Tharun, Vikram and Sahiti");
+
+  // The chorus drop: locked on both panes until every friend is fully repaid; the last full repayment drops it on both.
+  // The fake ledger owes Tharun $97.50 (paid $50 above), Vikram $82.50 and Sahiti $77.50.
+  const dropText = "Full Ode dropped · Florida '25";
+  for (const [pane, name] of [[left, "payer"], [right, "friend"]]) {
+    assert.equal(await pane.getByText(/Full Ode dropped/).count(), 0, `the ${name}'s pane shows the drop before anyone is repaid`);
+    assert.equal(await pane.getByLabel("Locked chorus").count(), 1, `the ${name}'s pane does not show the chorus locked`);
+  }
+  for (const [friendName, amount] of [["Tharun", "47.50"], ["Vikram", "82.50"]]) {
+    await left.getByLabel(new RegExp(`Pay ${friendName}`)).fill(amount);
+    await left.getByRole("button", { name: `Pay ${friendName}` }).click();
+    await left.getByRole("button", { name: `${friendName} is fully repaid` }).waitFor();
+  }
+  await left.getByLabel(/Pay Sahiti/).fill("77.49");
+  await left.getByRole("button", { name: "Pay Sahiti" }).click();
+  await left.getByText("Sahiti: lines 1, 2, 3 unlocked!").waitFor();
+  assert.equal(await left.getByText(/Full Ode dropped/).count(), 0, "the drop shows while Sahiti is a cent short");
+  assert.equal(await right.getByText(/Full Ode dropped/).count(), 0, "the friend's pane shows the drop while Sahiti is a cent short");
+  await left.getByLabel(/Pay Sahiti/).fill("0.01");
+  await left.getByRole("button", { name: "Pay Sahiti" }).click();
+  const droppedAt = Date.now();
+  await right.getByText(dropText).waitFor();
+  const dropMs = Date.now() - droppedAt;
+  await left.getByText(dropText).waitFor();
+  console.log(`split screen: the last payment dropped the chorus, "${dropText}", on the friend's pane after ${dropMs} ms and on the payer's`);
+  assert.ok(dropMs < 2500, `the friend's pane took ${dropMs} ms to show the drop`);
+  for (const [pane, name] of [[left, "payer"], [right, "friend"]]) {
+    assert.equal(await pane.getByLabel("Locked chorus").count(), 0, `the ${name}'s pane still shows the chorus locked after the drop`);
+  }
 
   const box = async (title) => (await page.locator(`iframe[title="${title}"]`).boundingBox()) ?? assert.fail(`no ${title} pane`);
   const [payer, friend2] = [await box("Payer"), await box("Friend view")];

@@ -1,6 +1,7 @@
-import type { Section } from "./ode.ts";
+import type { ChorusSection, Section } from "./ode.ts";
 import type { FriendStanding } from "./payments.ts";
 import { err, ok, type Result } from "./result.ts";
+import { chorusDropped } from "./unlock.ts";
 
 /** The link token belongs to nobody: it was never given out, or the ledger it was made for has been replaced. */
 export class UnknownLink extends Error {
@@ -51,11 +52,20 @@ export function withLocks<Line extends object>(lines: readonly Line[], standing:
 }
 
 /**
- * The Ode's sections for one friend: every verse with each of its lines locked or not, and amounts only on the
- * viewing friend's own verse.
+ * The chorus, locked until every friend is fully repaid. The one place the payer's page and a friend's page decide
+ * this, so they cannot disagree. With no standings (nobody has an amount owed) the chorus stays locked.
+ */
+export function withChorusLock(chorus: ChorusSection, standings: readonly FriendStanding[]) {
+  return { ...chorus, locked: !chorusDropped(standings) };
+}
+
+/**
+ * The Ode's sections for one friend: every verse with each of its lines locked or not, the chorus locked or dropped,
+ * and amounts only on the viewing friend's own verse.
  */
 function friendSectionsJson(sections: readonly Section[], standings: readonly FriendStanding[], viewer: string) {
   return sections.map((section) => {
+    if (section.kind === "chorus") return withChorusLock(section, standings);
     if (section.kind !== "verse") return section;
     const standing = standings.find((candidate) => candidate.friend === section.friend);
     return {
