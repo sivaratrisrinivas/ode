@@ -208,6 +208,53 @@ describe("the day's cap on new Odes", () => {
     expect((await ready(flaky)).trip).toBe("Goa '26");
   });
 
+  /** The day has exactly one place left: the next judge gets it, as their own Ode (not the uncapped Seeded Ode), and the one after is told no. */
+  async function expectOneMoreOdeFits(harness: Harness) {
+    const fifth = harness.judge();
+    expect((await fifth.post("/api/judge-ode", {})).status).toBe(200);
+    await fifth.post("/api/ledger", { notes: JUDGE_NOTES });
+    await fifth.post("/api/lyrics", {});
+    expect((await fifth.post("/api/ode", {})).status).toBe(202);
+    expect((await ready(fifth)).trip).toBe("Goa '26");
+    expect((await harness.judge().post("/api/judge-ode", {})).status).toBe(429);
+  }
+
+  it("costs one place for one Ode, however many requests start it at once", async () => {
+    const harness = await judgesHarness();
+    for (let judge = 1; judge <= 3; judge += 1) {
+      const browser = harness.judge();
+      await makeOwnOde(browser);
+      await ready(browser);
+    }
+    const double = harness.judge();
+    await double.post("/api/judge-ode", {});
+    await double.post("/api/ledger", { notes: JUDGE_NOTES });
+    await double.post("/api/lyrics", {});
+
+    await Promise.all([double.post("/api/ode", {}), double.post("/api/ode", {})]);
+    await ready(double);
+
+    // Four places are used (three, and the double request's one), so a fifth Ode still fits.
+    await expectOneMoreOdeFits(harness);
+  });
+
+  it("costs one place for one Ode when the Workflow refuses the first start and the judge tries again", async () => {
+    const harness = await judgesHarness();
+    for (let judge = 1; judge <= 3; judge += 1) {
+      const browser = harness.judge();
+      await makeOwnOde(browser);
+      await ready(browser);
+    }
+    const retrying = harness.judge();
+    harness.workflow.refuseNextStart();
+    expect((await makeOwnOde(retrying)).status).toBe(502);
+
+    expect((await retrying.post("/api/ode", {})).status).toBe(202);
+    await ready(retrying);
+
+    await expectOneMoreOdeFits(harness);
+  });
+
   it("does not count the payer's Seeded Ode", async () => {
     const harness = await judgesHarness();
 

@@ -49,8 +49,9 @@ export interface ShareRecord {
  * friend's page (the button) and the share request cannot disagree.
  *
  * @param standing - The friend's standing; undefined for a friend with no amount owed, who has nothing unlocked.
+ * @returns Whether they may; true also tells the compiler there is a standing.
  */
-export function canShareVerse(standing: Pick<FriendStanding, "linesUnlocked"> | undefined): boolean {
+export function canShareVerse(standing: Pick<FriendStanding, "linesUnlocked"> | undefined): standing is Pick<FriendStanding, "linesUnlocked"> {
   return standing !== undefined && standing.linesUnlocked >= 1;
 }
 
@@ -67,18 +68,28 @@ export function shareRecordFor(
   standing: Pick<FriendStanding, "linesUnlocked"> | undefined,
   chorusHasDropped: boolean,
 ): Result<ShareRecord, NoUnlockedLines> {
-  if (standing === undefined || !canShareVerse(standing)) return err(new NoUnlockedLines());
+  if (!canShareVerse(standing)) return err(new NoUnlockedLines());
   return ok({ owner: holder.owner, friend: holder.friend, linesUnlocked: standing.linesUnlocked, withChorus: chorusHasDropped });
 }
 
 /**
- * What a verse share is called wherever it is shown or previewed.
+ * The line that names a verse share: "An Ode for [name]". The one place it is written; the share's preview card headlines with
+ * it and `shareTitle` adds the trip.
+ *
+ * @param friend - Whose verse it is.
+ */
+export function shareHeadline(friend: string): string {
+  return `An Ode for ${friend}`;
+}
+
+/**
+ * What a verse share is called wherever it is shown or previewed: the page, the chat preview and the device's share sheet.
  *
  * @param friend - Whose verse it is.
  * @param trip - What the trip is called.
  */
 export function shareTitle(friend: string, trip: string): string {
-  return `An Ode for ${friend} · ${trip}`;
+  return `${shareHeadline(friend)} · ${trip}`;
 }
 
 /** How long two stretches overlap where a verse share jumps from one to the next, so the join is not a click. */
@@ -165,4 +176,21 @@ export interface ByteStretch {
 export function byteStretches(stretches: readonly TimeWindow[], ode: Pick<Ode, "durationMs">, size: number): ByteStretch[] {
   const at = (ms: number) => Math.min(size, Math.floor((ms * size) / ode.durationMs));
   return stretches.map((stretch) => ({ start: at(stretch.startMs), end: at(stretch.endMs) }));
+}
+
+/**
+ * The bytes of a verse share's audio: the stretches cut from the Ode's file and joined end to end, so nothing between them (a
+ * locked line, another friend's verse) is in it.
+ *
+ * @param audio - The Ode's whole audio file.
+ * @param stretches - Which bytes to keep, in play order, as `byteStretches` made them.
+ */
+export function clipOf(audio: Uint8Array, stretches: readonly ByteStretch[]): Uint8Array {
+  const clip = new Uint8Array(stretches.reduce((sum, stretch) => sum + stretch.end - stretch.start, 0));
+  let at = 0;
+  for (const stretch of stretches) {
+    clip.set(audio.subarray(stretch.start, stretch.end), at);
+    at += stretch.end - stretch.start;
+  }
+  return clip;
 }

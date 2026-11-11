@@ -15,7 +15,10 @@ export class InvalidReleaseDate extends Error {
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-const DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+/** What a stored release date looks like, as a regular expression source with year, month and day captured: the schema checks it too. */
+export const RELEASE_DATE_PATTERN = "^([0-9]{4})-([0-9]{2})-([0-9]{2})$";
+const DATE = new RegExp(RELEASE_DATE_PATTERN);
 
 /** The UTC day number (days since 1970-01-01) of a `YYYY-MM-DD` text, or undefined when it is not a real calendar date. */
 function dayNumber(text: string): number | undefined {

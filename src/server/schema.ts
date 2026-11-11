@@ -2,6 +2,8 @@ import { DEFAULT_TRIP } from "./ledger.ts";
 import { ODE_FAILURE_TAGS } from "./ode-run.ts";
 import { SEEDED } from "./owner.ts";
 import type { Queryable, Sql } from "./ports.ts";
+import { RELEASE_DATE_PATTERN } from "./release-date.ts";
+import { TOKEN_DEFAULT_SQL } from "./token.ts";
 
 /** The `OdeFailure` tags a run row may hold, as a SQL list. */
 const RUN_FAILURES = `(${ODE_FAILURE_TAGS.map((tag) => `'${tag}'`).join(", ")})`;
@@ -45,7 +47,7 @@ async function createTables(sql: Queryable): Promise<void> {
        amount_owed_cents integer check (amount_owed_cents > 0),
        amount_status text not null check (amount_status in ('stated', 'estimated', 'missing', 'covered')),
        inside_joke text not null,
-       link_token text not null unique default replace(gen_random_uuid()::text || gen_random_uuid()::text, '-', ''),
+       link_token text not null unique default ${TOKEN_DEFAULT_SQL},
        primary key (owner, friend)
      )`,
   );
@@ -77,7 +79,7 @@ async function createTables(sql: Queryable): Promise<void> {
     `create table if not exists odes (
        owner text primary key references ledger (owner) on delete cascade,
        audio bytea not null,
-       release_date text check (release_date ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+       release_date text check (release_date ~ '${RELEASE_DATE_PATTERN}')
      )`,
   );
   // The run making the Ode, kept here because the Workflow task and the web service are different processes and both must see
@@ -92,7 +94,7 @@ async function createTables(sql: Queryable): Promise<void> {
        step text not null check (step in ('writing', 'composing', 'finding-lines')),
        started_at timestamptz not null,
        workflow_run_id text check (workflow_run_id <> ''),
-       release_date text check (release_date ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'),
+       release_date text check (release_date ~ '${RELEASE_DATE_PATTERN}'),
        failure text check (failure in
          ${RUN_FAILURES}),
        failure_message text,
@@ -157,7 +159,7 @@ async function createTables(sql: Queryable): Promise<void> {
   // own that says nothing about the friend's private page. It cascades away with the friend when the ledger is replaced.
   await sql.query(
     `create table if not exists verse_shares (
-       token text primary key default replace(gen_random_uuid()::text || gen_random_uuid()::text, '-', ''),
+       token text primary key default ${TOKEN_DEFAULT_SQL},
        owner text not null,
        friend text not null,
        lines_unlocked integer not null check (lines_unlocked between 1 and 4),
@@ -198,7 +200,7 @@ async function adoptLegacy(tx: Queryable): Promise<void> {
   await tx.query(`alter table ledger add column if not exists trip text not null default ${DEFAULT_TRIP_SQL}`);
   await tx.query(
     `alter table ledger_friends add column if not exists link_token text not null unique
-       default replace(gen_random_uuid()::text || gen_random_uuid()::text, '-', '')`,
+       default ${TOKEN_DEFAULT_SQL}`,
   );
   await tx.query("alter table ode_runs add column if not exists release_date text");
   await tx.query("alter table odes add column if not exists release_date text");
@@ -209,21 +211,21 @@ async function adoptLegacy(tx: Queryable): Promise<void> {
   for (const table of LEGACY_TABLES) await tx.query(`alter table ${table} rename to ${table}_v1`);
   await createTables(tx);
   const copies = [
-    "insert into ledger (owner, notes, trip, warnings) select 'seeded', notes, trip, warnings from ledger_v1",
+    `insert into ledger (owner, notes, trip, warnings) select '${SEEDED}', notes, trip, warnings from ledger_v1`,
     `insert into ledger_friends (owner, friend, position, amount_owed_cents, amount_status, inside_joke, link_token)
-       select 'seeded', friend, position, amount_owed_cents, amount_status, inside_joke, link_token from ledger_friends_v1`,
-    "insert into lyric_lines (owner, friend, line_no, text, problems) select 'seeded', friend, line_no, text, problems from lyric_lines_v1",
-    "insert into lyric_refrains (owner, kind, text, problems) select 'seeded', kind, text, problems from lyric_refrains_v1",
-    "insert into odes (owner, audio, release_date) select 'seeded', audio, release_date from odes_v1",
+       select '${SEEDED}', friend, position, amount_owed_cents, amount_status, inside_joke, link_token from ledger_friends_v1`,
+    `insert into lyric_lines (owner, friend, line_no, text, problems) select '${SEEDED}', friend, line_no, text, problems from lyric_lines_v1`,
+    `insert into lyric_refrains (owner, kind, text, problems) select '${SEEDED}', kind, text, problems from lyric_refrains_v1`,
+    `insert into odes (owner, audio, release_date) select '${SEEDED}', audio, release_date from odes_v1`,
     `insert into ode_sections (owner, position, kind, friend, text, start_ms, end_ms)
-       select 'seeded', position, kind, friend, text, start_ms, end_ms from ode_sections_v1`,
+       select '${SEEDED}', position, kind, friend, text, start_ms, end_ms from ode_sections_v1`,
     `insert into ode_lines (owner, position, line_no, text, start_ms, end_ms)
-       select 'seeded', position, line_no, text, start_ms, end_ms from ode_lines_v1`,
+       select '${SEEDED}', position, line_no, text, start_ms, end_ms from ode_lines_v1`,
     `insert into payments (capture_id, owner, friend, amount_cents, captured_at, order_id, visitor)
-       select capture_id, 'seeded', friend, amount_cents, captured_at, order_id, visitor from payments_v1`,
-    "insert into payment_orders (order_id, visitor, owner) select order_id, visitor, 'seeded' from payment_orders_v1",
+       select capture_id, '${SEEDED}', friend, amount_cents, captured_at, order_id, visitor from payments_v1`,
+    `insert into payment_orders (order_id, visitor, owner) select order_id, visitor, '${SEEDED}' from payment_orders_v1`,
     `insert into ode_runs (owner, run_id, step, started_at, workflow_run_id, release_date, failure, failure_message)
-       select 'seeded', run_id, step, started_at, workflow_run_id, release_date, failure, failure_message from ode_runs_v1`,
+       select '${SEEDED}', run_id, step, started_at, workflow_run_id, release_date, failure, failure_message from ode_runs_v1`,
   ];
   for (const copy of copies) await tx.query(copy);
   for (const table of [...LEGACY_TABLES].reverse()) await tx.query(`drop table ${table}_v1 cascade`);

@@ -1,4 +1,4 @@
-import type { CapReached } from "./judge-odes.ts";
+import type { CapReached, Claim } from "./judge-odes.ts";
 import type { LedgerStore } from "./ledger-service.ts";
 import { lyricFriends, requireUnflagged, type LedgerNotReady, type LyricsFlagged } from "./lyrics.ts";
 import type { LyricsStore } from "./lyrics-service.ts";
@@ -121,7 +121,8 @@ const MAX_RUN_MS = 10 * 60_000;
  *
  * @param deps - The clock, the ledger, the lyrics, the Ode and run stores, the Workflow, and how run IDs are chosen. `admit`, when
  *   given, is asked before a new Ode starts being made (not before a retry of a failed run, which has already been admitted) and
- *   may refuse it.
+ *   may refuse it; the place it grants is given back when the run does not begin or the Workflow does not start it, so a
+ *   request that loses a race, or a start that fails and is tried again, costs one place in all.
  */
 export function createOdeMaker(deps: {
   clock: Clock;
@@ -131,7 +132,7 @@ export function createOdeMaker(deps: {
   runs: OdeRuns;
   workflow: OdeWorkflow;
   newRunId: () => RunId;
-  admit?: () => Promise<Result<void, CapReached>>;
+  admit?: () => Promise<Result<Claim, CapReached>>;
 }): OdeMaker {
   /** The run is read before the Ode: a run saves the Ode and clears itself in one commit, so a run seen as gone already has its Ode. */
   async function observe() {
@@ -195,15 +196,19 @@ export function createOdeMaker(deps: {
     if (unflagged?._tag === "err") return err(unflagged.error);
 
     // A retry of a failed run was admitted when that run started; anything else is a new Ode, and may have to wait for tomorrow.
+    let place: Claim | undefined;
     if (seen._tag !== "Failed" && deps.admit !== undefined) {
       const admitted = await deps.admit();
       if (admitted._tag === "err") return err(admitted.error);
+      place = admitted.value;
     }
 
     // One statement checks that there is no Ode and no run in progress, and records this run, so two requests (or a
     // request and a run that is just saving) cannot both start a paid song.
     const run = deps.newRunId();
     if (!(await deps.runs.begin(run, deps.clock.now(), date?.value))) {
+      // Another request began the run (and was admitted for it), so this one's place is spare.
+      await place?.release();
       const current = await status();
       return current._tag === "Ready" ? err(new OdeAlreadyMade()) : ok(current);
     }
@@ -211,6 +216,8 @@ export function createOdeMaker(deps: {
     const started = await deps.workflow.start(run);
     if (started._tag === "err") {
       await deps.runs.discard(run);
+      // The discarded run is gone, so trying again is admitted afresh: this attempt's place goes back or it would be counted twice.
+      await place?.release();
       return err(started.error);
     }
     await deps.runs.attach(run, started.value);

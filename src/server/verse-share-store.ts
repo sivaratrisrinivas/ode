@@ -1,9 +1,7 @@
-import { parseOwner } from "./owner.ts";
+import { ownerOfRow } from "./owner.ts";
 import type { Sql } from "./ports.ts";
+import { isTokenShaped } from "./token.ts";
 import type { ShareRecord } from "./verse-share.ts";
-
-/** What the schema generates for a share token: two UUIDs' hex digits. */
-const SHARE_TOKEN = /^[0-9a-f]{64}$/;
 
 /** Where verse shares are kept. */
 export interface VerseShareStore {
@@ -41,17 +39,14 @@ export function createVerseShareStore(sql: Sql): VerseShareStore {
 
     async read(token) {
       // A malformed token holds nothing, and a stray NUL byte would make the database refuse the query.
-      if (!SHARE_TOKEN.test(token)) return undefined;
+      if (!isTokenShaped(token)) return undefined;
       const { rows } = await sql.query<{ owner: string; friend: string; lines_unlocked: number; with_chorus: boolean }>(
         "select owner, friend, lines_unlocked, with_chorus from verse_shares where token = $1",
         [token],
       );
       const row = rows[0];
       if (row === undefined) return undefined;
-      const owner = parseOwner(row.owner);
-      // Defect: only this store writes owner, and it writes an Owner.
-      if (owner._tag === "err") throw new Error(`corrupt verse_shares row: ${row.owner} is not an owner`);
-      return { owner: owner.value, friend: row.friend, linesUnlocked: row.lines_unlocked, withChorus: row.with_chorus };
+      return { owner: ownerOfRow("verse_shares", row.owner), friend: row.friend, linesUnlocked: row.lines_unlocked, withChorus: row.with_chorus };
     },
   };
 }

@@ -3,12 +3,13 @@ import { parseByteRange } from "./byte-range.ts";
 
 /**
  * Answer a request with MP3 bytes, honouring a `Range` header so players can seek: 200 for everything, 206 for a range,
- * 416 for a range past the end.
+ * 416 for a range past the end, and 404 when there is no Ode to play.
  *
  * @param c - The request being answered.
- * @param audio - The bytes to serve.
+ * @param audio - The bytes to serve; undefined when the Ode is not made.
  */
-export function audioResponse(c: Context, audio: Uint8Array): Response {
+export function audioResponse(c: Context, audio: Uint8Array | undefined): Response {
+  if (audio === undefined) return c.json({ error: "There is no Ode to play yet." }, 404);
   const headers = { "content-type": "audio/mpeg", "accept-ranges": "bytes" };
   const range = parseByteRange(c.req.header("range"), audio.byteLength);
   if (range._tag === "err") return c.body(null, 416, { ...headers, "content-range": `bytes */${audio.byteLength}` });

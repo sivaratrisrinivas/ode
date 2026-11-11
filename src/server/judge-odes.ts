@@ -1,5 +1,5 @@
 import type { Owner } from "./owner.ts";
-import type { Clock, Sql } from "./ports.ts";
+import type { Clock, Queryable, Sql } from "./ports.ts";
 import { err, ok, type Result } from "./result.ts";
 import type { VisitorId } from "./visitor-id.ts";
 
@@ -15,6 +15,12 @@ export class CapReached extends Error {
   constructor() {
     super(`Today's ${DAILY_NEW_ODES} new Odes have all been made, so here is the Seeded Ode instead. New Odes open again tomorrow (UTC).`);
   }
+}
+
+/** A place in the day's cap, taken for one new Ode. */
+export interface Claim {
+  /** Give the place back, for an Ode that was never started: the counted song was never paid for. Giving back twice does nothing. */
+  release(): Promise<void>;
 }
 
 /** The visitors who make their own Odes, and the day's count of new Odes. */
@@ -37,9 +43,10 @@ export interface JudgeOdes {
    * Count one new Ode made by `owner`, unless the day's are used up. All visitors share the count, and two requests at
    * once cannot both take the last place.
    *
-   * @returns `CapReached`, with nothing counted, when the day's new Odes are used up.
+   * @returns The place taken, to `release` if the Ode does not start after all; or `CapReached`, with nothing counted, when the
+   *   day's new Odes are used up.
    */
-  claim(owner: Owner): Promise<Result<void, CapReached>>;
+  claim(owner: Owner): Promise<Result<Claim, CapReached>>;
 }
 
 /** The lock that makes counting a new Ode one step; any constant works, as nothing else takes advisory locks. */
@@ -54,8 +61,9 @@ const CLAIM_LOCK = 34;
 export function createJudgeOdes(sql: Sql, clock: Clock): JudgeOdes {
   const today = () => clock.now().toISOString().slice(0, 10);
 
-  async function claimedToday(): Promise<number> {
-    const { rows } = await sql.query<{ claimed: string }>("select count(*) as claimed from ode_claims where claimed_on = $1::date", [today()]);
+  /** How many new Odes today's cap has already counted, read through `db` so a claim counts inside its own transaction. */
+  async function claimedToday(db: Queryable): Promise<number> {
+    const { rows } = await db.query<{ claimed: string }>("select count(*) as claimed from ode_claims where claimed_on = $1::date", [today()]);
     return Number(rows[0]?.claimed ?? 0);
   }
 
@@ -69,7 +77,7 @@ export function createJudgeOdes(sql: Sql, clock: Clock): JudgeOdes {
 
     async enter(visitor) {
       if (await isJudge(visitor)) return ok(undefined);
-      if ((await claimedToday()) >= DAILY_NEW_ODES) return err(new CapReached());
+      if ((await claimedToday(sql)) >= DAILY_NEW_ODES) return err(new CapReached());
       await sql.query("insert into judge_odes (visitor) values ($1) on conflict (visitor) do nothing", [visitor]);
       return ok(undefined);
     },
@@ -85,12 +93,19 @@ export function createJudgeOdes(sql: Sql, clock: Clock): JudgeOdes {
     },
 
     async claim(owner) {
-      return sql.transaction<Result<void, CapReached>>(async (tx) => {
+      return sql.transaction<Result<Claim, CapReached>>(async (tx) => {
         await tx.query("select pg_advisory_xact_lock($1)", [CLAIM_LOCK]);
-        const { rows } = await tx.query<{ claimed: string }>("select count(*) as claimed from ode_claims where claimed_on = $1::date", [today()]);
-        if (Number(rows[0]?.claimed ?? 0) >= DAILY_NEW_ODES) return err(new CapReached());
-        await tx.query("insert into ode_claims (owner, claimed_on) values ($1, $2::date)", [owner, today()]);
-        return ok(undefined);
+        if ((await claimedToday(tx)) >= DAILY_NEW_ODES) return err(new CapReached());
+        const { rows } = await tx.query<{ id: string }>("insert into ode_claims (owner, claimed_on) values ($1, $2::date) returning id", [owner, today()]);
+        const id = rows[0]?.id;
+        // Defect: an insert with `returning` always returns its row.
+        if (id === undefined) throw new Error("inserting an Ode claim returned no row");
+        return ok({
+          // Deleting by ID is idempotent: the second call finds nothing.
+          async release() {
+            await sql.query("delete from ode_claims where id = $1", [id]);
+          },
+        });
       });
     },
   };
