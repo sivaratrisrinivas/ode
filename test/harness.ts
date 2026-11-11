@@ -32,24 +32,47 @@ export async function createHarness(canned: { claude?: Claude; music?: ElevenMus
   const ports = { ...fakePorts(), ...canned };
   const workflow = fakeWorkflow(createOdeJob({ sql, claude: ports.claude, music: ports.music }));
 
+  /** One person's browser: it keeps the cookies the API sets and sends them back, so its requests are one visitor. */
+  function browserOn(api: ReturnType<typeof createApi>, cookies: Map<string, string>) {
+    const request = async (path: string, init: RequestInit = {}) => {
+      const jar = [...cookies].map(([name, value]) => `${name}=${value}`).join("; ");
+      const headers = new Headers(init.headers);
+      if (jar !== "") headers.set("cookie", jar);
+      const res = await api.request(path, { ...init, headers });
+      for (const line of res.headers.getSetCookie()) {
+        const [pair = "", ...attributes] = line.split(";").map((part) => part.trim());
+        const [name = "", value = ""] = pair.split("=");
+        if (value === "" || attributes.includes("Max-Age=0")) cookies.delete(name);
+        else cookies.set(name, value);
+      }
+      return res;
+    };
+    return {
+      request,
+      get: (path: string) => request(path),
+      post: (path: string, body: unknown, headers: Record<string, string> = {}) =>
+        request(path, { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(body) }),
+      patch: (path: string, body: unknown) =>
+        request(path, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }),
+      /** The browser's cookies emptied, as when the visitor clears site data. */
+      clearCookies: () => cookies.clear(),
+      /** The value of a cookie this browser holds; undefined before its first visit. */
+      cookie: (name: string) => cookies.get(name),
+    };
+  }
+
+  // The harness's own browser keeps its cookies across web service restarts, as a person's does.
+  const cookies = new Map<string, string>();
+
   /** A web service process: a new API over the same database and Workflow, as after a deploy or a crash. */
   function webService() {
     const api = createApi({ sql, ports, workflow, friendAccounts: friendAccounts(seedFriendAccounts), paypalClientId: undefined });
     return {
-      request: (path: string, init?: RequestInit) => api.request(path, init),
-      get: (path: string) => api.request(path),
-      post: (path: string, body: unknown, headers: Record<string, string> = {}) =>
-        api.request(path, {
-          method: "POST",
-          headers: { "content-type": "application/json", ...headers },
-          body: JSON.stringify(body),
-        }),
-      patch: (path: string, body: unknown) =>
-        api.request(path, {
-          method: "PATCH",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(body),
-        }),
+      ...browserOn(api, cookies),
+      /** Another person's browser on this same web service: its own cookies, so its own visitor. */
+      newBrowser: () => browserOn(api, new Map()),
+      /** A request that carries no cookie and keeps none, as PayPal's webhook makes. */
+      anonymous: (path: string, init?: RequestInit) => api.request(path, init),
     };
   }
 
