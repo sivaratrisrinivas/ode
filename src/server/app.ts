@@ -20,6 +20,7 @@ import type { OdeWorkflow, Ports, Sql } from "./ports.ts";
 import { ok, type Result } from "./result.ts";
 import * as TripNotes from "./trip-notes.ts";
 import { chorusDropped } from "./unlock.ts";
+import { visitorMiddleware, type VisitorEnv, type VisitorId } from "./visitor.ts";
 
 function field(body: unknown, name: string): unknown {
   return typeof body === "object" && body !== null ? Reflect.get(body, name) : undefined;
@@ -207,7 +208,8 @@ function newRunId(): RunId {
  * @param deps - The database, the external-service ports the API calls itself (Eleven Music is called only by
  *   the Workflow task), the Workflow that makes the Ode, the PayPal account that pays each friend, and the PayPal
  *   client ID the page loads PayPal's buttons with (undefined when none is configured).
- * @returns A Hono app serving `/api/*`.
+ * @returns A Hono app serving `/api/*`. Every request it sees, the page's own included, is attributed to a visitor by
+ *   cookie, and a first visit sets that cookie.
  */
 export function createApi({
   sql,
@@ -221,8 +223,9 @@ export function createApi({
   workflow: OdeWorkflow;
   friendAccounts: FriendAccounts;
   paypalClientId: string | undefined;
-}): Hono {
-  const api = new Hono();
+}): Hono<VisitorEnv> {
+  const api = new Hono<VisitorEnv>();
+  api.use("*", visitorMiddleware);
   const store = createLedgerStore(sql);
   const lyricsStore = createLyricsStore(sql);
   const odeStore = createOdeStore(sql);
@@ -267,7 +270,7 @@ export function createApi({
     return c.json(lyricsJson(result.value));
   });
 
-  async function editLine(c: Context, slot: Result<LineSlot, NoSuchLine>) {
+  async function editLine(c: Context<VisitorEnv>, slot: Result<LineSlot, NoSuchLine>) {
     if (slot._tag === "err") return c.json({ error: slot.error.message }, 404);
     const body: unknown = await c.req.json().catch(() => undefined);
     const edit = parseLineEdit(body);
@@ -287,12 +290,12 @@ export function createApi({
   api.patch("/api/lyrics/chorus", (c) => editLine(c, ok({ _tag: "chorus" })));
 
   /** The Ode as the payer's page sees it: each verse with its friend's standing and private link. */
-  async function payerOde(status: OdeStatus) {
-    const [standings, tokens, trip] = await Promise.all([payments.standings(), store.linkTokens(), store.trip()]);
+  async function payerOde(status: OdeStatus, visitor: VisitorId) {
+    const [standings, tokens, trip] = await Promise.all([payments.standings(visitor), store.linkTokens(), store.trip()]);
     return odeJson(status, { standings, trip }, (sections) => sectionsJson(sections, standings, tokens));
   }
 
-  api.get("/api/ode", async (c) => c.json(await payerOde(await odeMaker.status())));
+  api.get("/api/ode", async (c) => c.json(await payerOde(await odeMaker.status(), c.get("visitor"))));
 
   api.post("/api/ode", async (c) => {
     const started = await odeMaker.start();
@@ -300,7 +303,7 @@ export function createApi({
       const { status, message } = startFailure(started.error);
       return c.json({ error: message }, status);
     }
-    return c.json(await payerOde(started.value), 202);
+    return c.json(await payerOde(started.value, c.get("visitor")), 202);
   });
 
   // The client ID is public by design: PayPal's page script needs it. Null means the page offers its keyless Pay button.
@@ -309,7 +312,7 @@ export function createApi({
   api.post("/api/payments/orders", async (c) => {
     const body: unknown = await c.req.json().catch(() => undefined);
     const friend = field(body, "friend");
-    const order = await payments.createOrder(typeof friend === "string" ? friend : "", field(body, "amountCents"));
+    const order = await payments.createOrder(c.get("visitor"), typeof friend === "string" ? friend : "", field(body, "amountCents"));
     if (order._tag === "err") {
       const { status, message } = orderFailure(order.error);
       return c.json({ error: message }, status);
@@ -322,7 +325,7 @@ export function createApi({
     const orderId = field(body, "orderId");
     if (typeof orderId !== "string" || orderId === "") return c.json({ error: "Send the orderId PayPal gave you." }, 422);
 
-    const paid = await payments.capture(orderId);
+    const paid = await payments.capture(c.get("visitor"), orderId);
     if (paid._tag === "err") {
       const { status, message } = captureFailure(paid.error);
       return c.json({ error: message }, status);
@@ -352,15 +355,15 @@ export function createApi({
   });
 
   /** What a friend's page shows right now, or `UnknownLink` when the token is nobody's. */
-  async function friendView(token: string): Promise<Result<ReturnType<typeof friendViewJson>, UnknownLink>> {
+  async function friendView(token: string, visitor: VisitorId): Promise<Result<ReturnType<typeof friendViewJson>, UnknownLink>> {
     const friend = linkOwner(await store.friendForToken(token));
     if (friend._tag === "err") return friend;
-    const [status, standings, trip] = await Promise.all([odeMaker.status(), payments.standings(), store.trip()]);
+    const [status, standings, trip] = await Promise.all([odeMaker.status(), payments.standings(visitor), store.trip()]);
     return ok(friendViewJson(friend.value, standings, (sections) => odeJson(status, { standings, trip }, sections)));
   }
 
   api.get("/api/friends/:token", async (c) => {
-    const view = await friendView(c.req.param("token"));
+    const view = await friendView(c.req.param("token"), c.get("visitor"));
     return view._tag === "err" ? c.json({ error: view.error.message }, 404) : c.json(view.value);
   });
 
@@ -368,8 +371,16 @@ export function createApi({
   // drop is current without asking for anything.
   api.get("/api/friends/:token/events", async (c) => {
     const token = c.req.param("token");
-    const first = await friendView(token);
-    return first._tag === "err" ? c.json({ error: first.error.message }, 404) : eventStream(first.value, () => friendView(token));
+    const visitor = c.get("visitor");
+    const first = await friendView(token, visitor);
+    return first._tag === "err" ? c.json({ error: first.error.message }, 404) : eventStream(first.value, () => friendView(token, visitor));
+  });
+
+  // "Reset demo": the visitor's copy goes back to unpaid, for a retake. The Ode itself, its audio and every other
+  // visitor's copy are untouched.
+  api.post("/api/demo/reset", async (c) => {
+    await payments.reset(c.get("visitor"));
+    return c.json({ ok: true });
   });
 
   api.get("/api/ode/audio", async (c) => {

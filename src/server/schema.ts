@@ -115,6 +115,18 @@ export async function migrate(sql: Sql): Promise<void> {
   );
   // The order a capture belongs to, so a capture response that follows the webhook for the same order is known for what it is.
   await sql.query("alter table payments add column if not exists order_id text");
+  // Whose copy of the Seeded Ode a payment counts in: each visitor's payments are their own. Rows from before visitors
+  // have none, and belong to nobody's copy.
+  await sql.query("alter table payments add column if not exists visitor text");
+  await sql.query("create index if not exists payments_visitor on payments (visitor)");
+  // The visitor each PayPal order was made for. Kept apart from `payments` because an order exists before its capture, and
+  // PayPal's webhook carries no cookie: the order is how it finds the copy to count a payment in.
+  await sql.query(
+    `create table if not exists payment_orders (
+       order_id text primary key,
+       visitor text not null
+     )`,
+  );
   // Each friend's private link: two random UUIDs, 244 bits, so a link cannot be guessed. Rows that predate the column get
   // theirs here, since a volatile default is evaluated once per row.
   await sql.query(

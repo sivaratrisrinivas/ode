@@ -4,7 +4,9 @@
 // screenshot of each tab (the friend's is saved beside it, as friend-<name>). Then it opens /split, the payer's page
 // beside a friend's, and checks that a payment on the left unlocks the line on the right, that the picker switches the
 // right pane between the friends, that the chorus stays locked on both panes until every friend is fully repaid and then
-// reads "Full Ode dropped · Florida '25", and that the panes stack on a phone. See docs/agents/run.md. Usage: node scripts/drive-fake.mjs [screenshot.png]
+// reads "Full Ode dropped · Florida '25", and that the panes stack on a phone. Last, a second browser context (its own
+// cookie, so its own copy of the Ode) checks that payments, reloads, "Reset demo" and a cleared cookie act on one copy only.
+// See docs/agents/run.md. Usage: node scripts/drive-fake.mjs [screenshot.png]
 import assert from "node:assert/strict";
 // PLAYWRIGHT_CORE overrides where playwright-core is imported from (it is not in node_modules).
 const { chromium } = await import(process.env.PLAYWRIGHT_CORE ?? "/home/srinivas/.bun/install/cache/playwright-core@1.63.0@@@1/index.mjs");
@@ -29,7 +31,7 @@ await page.addInitScript(() => {
 });
 
 try {
-  await page.goto(`http://localhost:${port}`);
+  await page.goto(`http://localhost:${port}/payer`);
   await page.locator("textarea").fill("Trip notes: Tharun paid for the car, 390 dollars, split four ways.");
   await page.getByRole("button", { name: "Build the ledger" }).click();
   await page.getByRole("button", { name: "Write the lyrics" }).click();
@@ -128,6 +130,59 @@ try {
   assert.ok(narrowPayer.width <= 390 && narrowFriend.width <= 390, "a pane is wider than the phone");
   console.log("split screen: side by side when wide, stacked at phone width");
   await page.screenshot({ path: `split-${screenshot}`, fullPage: true });
+
+  // One copy per visitor: a second browser (its own context, so its own cookie) lands on the split screen with the Ode
+  // and nothing paid, while the first browser's copy stays fully repaid with the chorus dropped. Each browser reads
+  // Tharun's friend view, whose $97.50 the first browser repaid above.
+  const repaid = (pane, amount) =>
+    pane.getByLabel("Your money").filter({ hasText: new RegExp(`Repaid so far: \\$${amount.toFixed(2).replace(".", "\\.")}`) }).waitFor({ timeout: 15_000 });
+  await page.setViewportSize({ width: 900, height: 1400 });
+  await page.getByRole("button", { name: "Tharun" }).click();
+  await repaid(right, 97.5);
+
+  const otherContext = await browser.newContext({ viewport: { width: 900, height: 1400 } });
+  const other = await otherContext.newPage();
+  await other.goto(`http://localhost:${port}/`);
+  const otherLeft = other.frameLocator('iframe[title="Payer"]');
+  const otherRight = other.frameLocator('iframe[title="Friend view"]');
+  await otherLeft.getByText("Your Ode").waitFor({ timeout: 30_000 });
+  await other.getByRole("button", { name: "Tharun" }).click();
+  await repaid(otherRight, 0);
+  await repaid(right, 97.5);
+  // The other copy has every friend unpaid, so its chorus is still locked while the first copy's has dropped.
+  assert.equal(await otherLeft.getByText(/Full Ode dropped/).count(), 0, "the second browser shows the first browser's chorus drop");
+  assert.equal(await otherLeft.getByLabel("Locked chorus").count(), 1, "the second browser's chorus is not locked");
+  assert.equal(await left.getByText(dropText).count(), 1, "the first browser lost its chorus drop");
+  console.log("visitor copies: a second browser lands on the split screen with everything unpaid and the chorus locked, the first still has Tharun repaid and the chorus dropped");
+
+  await otherLeft.getByLabel(/Pay Tharun/).fill("20");
+  await otherLeft.getByRole("button", { name: "Pay Tharun" }).click();
+  await repaid(otherRight, 20);
+  await page.reload();
+  await page.getByRole("button", { name: "Tharun" }).click();
+  await repaid(page.frameLocator('iframe[title="Friend view"]'), 97.5);
+  await page.frameLocator('iframe[title="Payer"]').getByText(dropText).waitFor();
+  console.log("visitor copies: paying in the second browser left the first at $97.50, and a reload keeps each copy");
+
+  // "Reset demo" starts this browser's copy from zero and leaves the other browser's copy alone.
+  await page.getByRole("button", { name: "Reset demo" }).click();
+  const resetAt = Date.now();
+  await repaid(page.frameLocator('iframe[title="Friend view"]'), 0);
+  const resetMs = Date.now() - resetAt;
+  console.log(`visitor copies: Reset demo showed Tharun unpaid after ${resetMs} ms`);
+  assert.ok(resetMs < 5000, `Reset demo took ${resetMs} ms to show the copy unpaid`);
+  await page.frameLocator('iframe[title="Payer"]').getByLabel("Locked chorus").waitFor({ timeout: 15_000 });
+  await other.reload();
+  await other.getByRole("button", { name: "Tharun" }).click();
+  await repaid(other.frameLocator('iframe[title="Friend view"]'), 20);
+
+  // A visitor whose cookie is gone gets a fresh unpaid copy.
+  await otherContext.clearCookies();
+  await other.reload();
+  await other.getByRole("button", { name: "Tharun" }).click();
+  await repaid(other.frameLocator('iframe[title="Friend view"]'), 0);
+  console.log("visitor copies: Reset demo cleared only its own copy, and a cleared cookie gave a fresh one");
+  await otherContext.close();
 } finally {
   await browser.close();
 }

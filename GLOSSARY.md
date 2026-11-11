@@ -91,3 +91,6 @@ _Avoid_: Mini song, share card, Ode for X
 
 **Seeded Ode**:
 The pre-made Ode from the real 2025 Florida trip, sung in the payer's cloned voice; every visitor gets their own unpaid copy.
+
+**Visitor copy**:
+One browser's payments against the Seeded Ode, kept under the `ode_visitor` cookie. The Ode and its audio are shared; only what has been paid is the visitor's own. "Reset demo" clears it; a missing or cleared cookie starts a new, unpaid one.

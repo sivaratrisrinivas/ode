@@ -4,13 +4,20 @@ import { UnknownFriend } from "./ledger.ts";
 import { PayPalUnavailable, type PayPal } from "./ports.ts";
 import { err, ok, type Result } from "./result.ts";
 import { linesUnlocked, nextLineAtCents } from "./unlock.ts";
+import type { VisitorId } from "./visitor.ts";
 
-/** What the payments service needs from storage: each captured payment, kept for good. */
+/** What the payments service needs from storage: each captured payment, kept for good, and whose copy of the Ode it counts in. */
 export interface PaymentStore {
-  /** Gross cents captured so far for each friend who has been paid anything; not capped at what is owed. */
-  totals(): Promise<ReadonlyMap<string, number>>;
-  /** Record a capture. A capture ID already recorded changes nothing, so the same payment is never counted twice. */
-  record(payment: { captureId: string; orderId: string; friend: string; amountCents: number }): Promise<void>;
+  /** Gross cents captured so far in the visitor's copy for each friend who has been paid anything; not capped at what is owed. */
+  totals(visitor: VisitorId): Promise<ReadonlyMap<string, number>>;
+  /** Record a capture in the visitor's copy. A capture ID already recorded changes nothing, so the same payment is never counted twice. */
+  record(payment: { visitor: VisitorId; captureId: string; orderId: string; friend: string; amountCents: number }): Promise<void>;
+  /** Remember which visitor an order was made for, so its capture (and PayPal's webhook, which carries no visitor) counts in their copy. */
+  recordOrder(orderId: string, visitor: VisitorId): Promise<void>;
+  /** The visitor an order was made for; undefined for an order this app never made. */
+  orderVisitor(orderId: string): Promise<VisitorId | undefined>;
+  /** Forget every payment in the visitor's copy, so it is unpaid again. Other visitors' copies are untouched. */
+  reset(visitor: VisitorId): Promise<void>;
   /** Whether a capture of this order has been recorded, whichever of the capture response and the webhook recorded it. */
   hasOrder(orderId: string): Promise<boolean>;
   /** Whether this capture has been recorded. */
@@ -124,36 +131,45 @@ export type CaptureError = NotAFriendsOrder | NothingOwed | FullyRepaid | Amount
 /** Paying friends back through PayPal, and where each friend stands as a result. */
 export interface Payments {
   /**
-   * Every friend with an amount owed, in ledger order, with their lines unlocked so far.
+   * Every friend with an amount owed, in ledger order, with their lines unlocked so far in the visitor's copy.
    *
-   * @returns The standings; empty when the ledger is empty.
+   * @param visitor - Whose copy of the Ode to read.
+   * @returns The standings; empty when the ledger is empty. A visitor who has paid nothing has every friend unpaid.
    */
-  standings(): Promise<readonly FriendStanding[]>;
+  standings(visitor: VisitorId): Promise<readonly FriendStanding[]>;
   /**
    * Create a PayPal order paying `friend` `amountCents`. Nothing is paid until the order is captured.
    *
+   * @param visitor - Whose copy of the Ode the payment will count in; only they can capture the order.
    * @param friend - The friend's name as on the ledger.
    * @param amountCents - Untrusted: it must be a whole number of cents, at least 1 and no more than still owed.
    * @returns The new order's ID, or why none was made. A friend already fully repaid is reported before the amount is judged.
    */
-  createOrder(friend: string, amountCents: unknown): Promise<Result<string, CreateOrderError>>;
+  createOrder(visitor: VisitorId, friend: string, amountCents: unknown): Promise<Result<string, CreateOrderError>>;
   /**
    * Capture an order the payer approved, and record it. The same order captured again counts once.
    *
+   * @param visitor - Who is capturing; an order made for another visitor, or by nothing here, is not theirs to capture.
    * @param orderId - The PayPal order ID the page was given.
    * @returns The paid friend's new standing, or why no payment was counted: a declined payment sent nothing.
    */
-  capture(orderId: string): Promise<Result<FriendStanding, CaptureError>>;
+  capture(visitor: VisitorId, orderId: string): Promise<Result<FriendStanding, CaptureError>>;
   /**
    * Count a capture PayPal's webhook says completed. Money has moved, so it counts even past what is owed (the amount
    * repaid is capped when read), and a capture the capture response already recorded, or an earlier delivery of
    * the same event, changes nothing.
    *
-   * @param payment - The capture; the order it belongs to is read back to find which friend it paid.
-   * @returns "recorded", or "ignored" for an order that did not pay a friend on the ledger. A PayPal that cannot be
+   * @param payment - The capture; the order it belongs to is read back to find which friend it paid, and the visitor it was made for.
+   * @returns "recorded", or "ignored" for an order that did not pay a friend on the ledger or that no visitor made. A PayPal that cannot be
    *   reached is an error, so the webhook can be asked to deliver again.
    */
   confirm(payment: CapturedPayment): Promise<Result<"recorded" | "ignored", PayPalUnavailable>>;
+  /**
+   * Put the visitor's copy back to unpaid: forget every payment counted in it.
+   *
+   * @param visitor - Whose copy to reset; other visitors' copies are untouched.
+   */
+  reset(visitor: VisitorId): Promise<void>;
 }
 
 /** A dollar amount for a message to the payer: 4750 is "$47.50". */
@@ -167,8 +183,8 @@ function dollars(cents: number): string {
  * @param deps - The ledger, the stored payments, PayPal, and which account pays which friend.
  */
 export function createPayments(deps: { ledger: Pick<LedgerStore, "read">; store: PaymentStore; paypal: PayPal; accounts: FriendAccounts }): Payments {
-  async function standings(): Promise<FriendStanding[]> {
-    const [ledger, totals] = await Promise.all([deps.ledger.read(), deps.store.totals()]);
+  async function standings(visitor: VisitorId): Promise<FriendStanding[]> {
+    const [ledger, totals] = await Promise.all([deps.ledger.read(), deps.store.totals(visitor)]);
     return ledger.rows.flatMap((row) => {
       if (row.amountOwedCents === null) return [];
       const owed = row.amountOwedCents;
@@ -188,8 +204,8 @@ export function createPayments(deps: { ledger: Pick<LedgerStore, "read">; store:
   }
 
   /** The friend's standing, or why they cannot be paid anything: unknown, no amount owed, or already repaid. */
-  async function payable(friend: string): Promise<Result<FriendStanding, UnknownFriend | NothingOwed | FullyRepaid>> {
-    const standing = (await standings()).find((candidate) => candidate.friend === friend);
+  async function payable(visitor: VisitorId, friend: string): Promise<Result<FriendStanding, UnknownFriend | NothingOwed | FullyRepaid>> {
+    const standing = (await standings(visitor)).find((candidate) => candidate.friend === friend);
     if (standing !== undefined) return standing.canPay ? ok(standing) : err(new FullyRepaid(friend));
     const ledger = await deps.ledger.read();
     return err(ledger.rows.some((row) => row.friend === friend) ? new NothingOwed(friend) : new UnknownFriend(friend));
@@ -201,8 +217,8 @@ export function createPayments(deps: { ledger: Pick<LedgerStore, "read">; store:
   }
 
   /** The friend's standing, right after a payment to them was recorded. */
-  async function standingOf(friend: string): Promise<FriendStanding> {
-    const standing = (await standings()).find((candidate) => candidate.friend === friend);
+  async function standingOf(visitor: VisitorId, friend: string): Promise<FriendStanding> {
+    const standing = (await standings(visitor)).find((candidate) => candidate.friend === friend);
     // Defect: `record` just stored a payment for a friend who had an amount owed a moment ago; only a ledger rebuilt mid-request removes them.
     if (standing === undefined) throw new Error(`${friend} left the ledger while their payment was recorded`);
     return standing;
@@ -211,8 +227,8 @@ export function createPayments(deps: { ledger: Pick<LedgerStore, "read">; store:
   return {
     standings,
 
-    async createOrder(friend, amountCents) {
-      const standing = await payable(friend);
+    async createOrder(visitor, friend, amountCents) {
+      const standing = await payable(visitor, friend);
       if (standing._tag === "err") return standing;
       if (typeof amountCents !== "number" || !Number.isInteger(amountCents) || amountCents < 1) return err(new InvalidPayment());
       const tooHigh = within(standing.value, amountCents);
@@ -221,24 +237,27 @@ export function createPayments(deps: { ledger: Pick<LedgerStore, "read">; store:
       if (email === undefined) return err(new NoPayPalAccount(friend));
 
       const order = await deps.paypal.createOrder({ friendEmail: email, amountCents });
-      return order._tag === "ok" ? ok(order.value.orderId) : order;
+      if (order._tag === "err") return order;
+      await deps.store.recordOrder(order.value.orderId, visitor);
+      return ok(order.value.orderId);
     },
 
-    async capture(orderId) {
+    async capture(visitor, orderId) {
       // The order is read back first: the payee decides which friend is paid, and nothing the page says does.
       const order = await deps.paypal.getOrder(orderId);
       if (order._tag === "err") return order;
       const friend = deps.accounts.friendFor(order.value.friendEmail);
-      if (friend === undefined) return err(new NotAFriendsOrder());
+      // An order made for another visitor is not this one's to capture: it would count in the wrong copy.
+      if (friend === undefined || (await deps.store.orderVisitor(orderId)) !== visitor) return err(new NotAFriendsOrder());
 
       // The webhook got here first: this payment is already counted, so the response changes nothing.
       if (await deps.store.hasOrder(orderId)) {
-        const counted = (await standings()).find((candidate) => candidate.friend === friend);
+        const counted = (await standings(visitor)).find((candidate) => candidate.friend === friend);
         // The payment was recorded earlier; a ledger rebuilt since has dropped the friend it paid.
         return counted === undefined ? err(new NotAFriendsOrder()) : ok(counted);
       }
 
-      const standing = await payable(friend);
+      const standing = await payable(visitor, friend);
       // A payee who is no longer on the ledger is not one of the friends this order can pay.
       if (standing._tag === "err") return err(standing.error._tag === "UnknownFriend" ? new NotAFriendsOrder() : standing.error);
       const tooHigh = within(standing.value, order.value.amountCents);
@@ -249,9 +268,11 @@ export function createPayments(deps: { ledger: Pick<LedgerStore, "read">; store:
       if (capture.value.status === "DECLINED") return err(new PaymentDeclined());
 
       // The capture's amount is gross, before PayPal's fee, and the same capture ID is only ever counted once.
-      await deps.store.record({ captureId: capture.value.captureId, orderId, friend, amountCents: capture.value.amountCents });
-      return ok(await standingOf(friend));
+      await deps.store.record({ visitor, captureId: capture.value.captureId, orderId, friend, amountCents: capture.value.amountCents });
+      return ok(await standingOf(visitor, friend));
     },
+
+    reset: (visitor) => deps.store.reset(visitor),
 
     async confirm({ captureId, orderId, amountCents }) {
       // A delivery of an event already counted needs nothing from PayPal, so a PayPal outage cannot fail it.
@@ -259,11 +280,12 @@ export function createPayments(deps: { ledger: Pick<LedgerStore, "read">; store:
       const order = await deps.paypal.getOrder(orderId);
       if (order._tag === "err") return order;
       const friend = deps.accounts.friendFor(order.value.friendEmail);
-      if (friend === undefined) return ok("ignored");
+      const visitor = await deps.store.orderVisitor(orderId);
+      if (friend === undefined || visitor === undefined) return ok("ignored");
       const ledger = await deps.ledger.read();
       // A friend with no amount owed, or none on the ledger any more, has no lines this payment could unlock.
       if (!ledger.rows.some((row) => row.friend === friend && row.amountOwedCents !== null)) return ok("ignored");
-      await deps.store.record({ captureId, orderId, friend, amountCents });
+      await deps.store.record({ visitor, captureId, orderId, friend, amountCents });
       return ok("recorded");
     },
   };
