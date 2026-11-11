@@ -19,7 +19,7 @@ import type { Section } from "./ode.ts";
 import type { OdeWorkflow, Ports, Sql } from "./ports.ts";
 import { ok, type Result } from "./result.ts";
 import * as TripNotes from "./trip-notes.ts";
-import { chorusDropped } from "./unlock.ts";
+import { chorusDropped, releaseStatus } from "./unlock.ts";
 import { visitorMiddleware, type VisitorEnv } from "./visitor.ts";
 import type { VisitorId } from "./visitor-id.ts";
 
@@ -100,6 +100,7 @@ function startFailure(error: StartOdeError): { status: 409 | 422 | 502; message:
   switch (error._tag) {
     case "LedgerNotReady":
     case "LyricsFlagged":
+    case "InvalidReleaseDate":
       return { status: 422, message: error.message };
     case "OdeAlreadyMade":
       return { status: 409, message: error.message };
@@ -132,10 +133,11 @@ function sectionsJson(sections: readonly Section[], standings: readonly FriendSt
   }));
 }
 
-/** What both pages' Ode shares: every friend's standing and what the trip is called, read for one visitor's copy. */
+/** What both pages' Ode shares: every friend's standing, what the trip is called and the time, read for one visitor's copy. */
 interface OdeFinish {
   standings: readonly FriendStanding[];
   trip: string;
+  now: Date;
 }
 
 /**
@@ -157,6 +159,7 @@ function odeJson(status: OdeStatus, finish: OdeFinish, sections: (sections: read
         audioUrl: "/api/ode/audio",
         trip: finish.trip,
         dropped: chorusDropped(finish.standings),
+        release: status.releaseDate === undefined ? null : releaseStatus(status.releaseDate, finish.now, finish.standings),
         sections: sections(status.ode.sections),
       };
   }
@@ -292,7 +295,7 @@ export function createApi({
   /** The standings in the visitor's copy and the trip's name, which both pages' Odes carry. */
   async function finishOf(visitor: VisitorId): Promise<OdeFinish> {
     const [standings, trip] = await Promise.all([payments.standings(visitor), store.trip()]);
-    return { standings, trip };
+    return { standings, trip, now: ports.clock.now() };
   }
 
   /** The Ode as the payer's page sees it: each verse with its friend's standing and private link. */
@@ -304,7 +307,8 @@ export function createApi({
   api.get("/api/ode", async (c) => c.json(await payerOde(await odeMaker.status(), c.get("visitor"))));
 
   api.post("/api/ode", async (c) => {
-    const started = await odeMaker.start();
+    const body: unknown = await c.req.json().catch(() => undefined);
+    const started = await odeMaker.start(field(body, "releaseDate"));
     if (started._tag === "err") {
       const { status, message } = startFailure(started.error);
       return c.json({ error: message }, status);

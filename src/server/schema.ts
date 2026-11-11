@@ -81,6 +81,10 @@ export async function migrate(sql: Sql): Promise<void> {
     await tx.query("alter table ode_runs drop constraint if exists ode_runs_failure_check");
     await tx.query(`alter table ode_runs add constraint ode_runs_failure_check check (failure in ${RUN_FAILURES})`);
   });
+  // The release date the payer promised when making the Ode: chosen with the run and copied to the Ode when it is saved, never
+  // updated after. Null for an Ode made without one (the seeded demo's older rows, or a request that sent none).
+  await sql.query("alter table ode_runs add column if not exists release_date text check (release_date ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$')");
+  await sql.query("alter table odes add column if not exists release_date text check (release_date ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$')");
   await sql.query(
     `create table if not exists ode_sections (
        position integer primary key,

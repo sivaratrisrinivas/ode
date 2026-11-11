@@ -72,11 +72,11 @@ A line becoming clear because the amount repaid reached its 25% step. Lines unlo
 The chorus unlocking on the last payment.
 
 **Release date**:
-The date the payer promises the whole Ode will drop; fixed once set. Passing it without full repayment makes the Ode delayed; it does not drop the chorus.
+The calendar day (UTC) the payer promises the whole Ode will drop, chosen when they make the Ode and fixed from then on; it may be today or later. Until then the pages show a countdown ("1 of 3 friends · 22 days to drop"). The release day itself is not late; once it is over, with friends unpaid, the Ode is delayed. It never drops the chorus.
 _Avoid_: Deadline, due date
 
 **Delayed**:
-An Ode whose release date has passed with friends still unpaid.
+An Ode whose release date has passed with friends still unpaid. The chorus stays locked, and repaying everyone late still drops it and ends the delay.
 
 ## Sharing
 

@@ -19,6 +19,14 @@ type Load = { status: "loading" } | { status: "unreachable" } | OdeResponse;
 
 const POLL_MS = 1000;
 
+/** `YYYY-MM-DD` for a day this many days from today in the browser's own calendar; the server decides what dates are allowed. */
+function dateInDays(days: number): string {
+  const date = new Date();
+  date.setDate(date.getDate() + days);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
 const stepLabels: Record<string, string> = {
   writing: "Writing the lyrics",
   composing: "Composing the song",
@@ -48,6 +56,8 @@ export function OdeStudio({ quiet = false }: { quiet?: boolean }): ReactElement 
   const [startError, setStartError] = useState<string | null>(null);
   // Lines flagged in the lyrics preview; the Ode is not made while any is, or before the preview has said.
   const [flagged, setFlagged] = useState<number | null>(null);
+  // The promise to the friends, a month out unless the payer picks another day; it cannot be changed once the Ode is made.
+  const [releaseDate, setReleaseDate] = useState(() => dateInDays(30));
 
   async function refresh() {
     // A failed poll mid-run is not the end of the run: keep the steps on screen and ask again.
@@ -77,7 +87,11 @@ export function OdeStudio({ quiet = false }: { quiet?: boolean }): ReactElement 
   async function make() {
     setStartError(null);
     try {
-      const res = await fetch("/api/ode", { method: "POST" });
+      const res = await fetch("/api/ode", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(releaseDate === "" ? {} : { releaseDate }),
+      });
       if (res.status === 409) {
         // Already made (in another tab): show it.
         await refresh();
@@ -113,6 +127,13 @@ export function OdeStudio({ quiet = false }: { quiet?: boolean }): ReactElement 
         ) : (
           <>
             {load.status === "failed" && <p role="alert" style={{ color: "#b00020" }}>{load.error}</p>}
+            <p>
+              <label>
+                Release date <input type="date" value={releaseDate} onChange={(event) => setReleaseDate(event.target.value)} />
+              </label>
+              <br />
+              <small>The day you promise the whole Ode drops. It can’t be changed after you make the Ode.</small>
+            </p>
             <button onClick={() => void make()} disabled={flagged === null || flagged > 0} aria-describedby={flagged !== null && flagged > 0 ? "flagged-why" : undefined}>
               {load.status === "failed" ? "Try again" : "Make the Ode"}
             </button>
