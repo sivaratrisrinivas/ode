@@ -26,3 +26,7 @@ Judgement calls the reviewer enforces. See `CODING_STANDARDS.md`.
 ## Ticket rule
 
 Every ticket answers: What, Why, Where, What if, Who, When.
+
+### Schedule
+
+Deadlines, ticket order and the cut order live in `docs/plan/build-plan.md`.

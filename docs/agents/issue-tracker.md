@@ -16,6 +16,8 @@ Use the gh CLI from this repo.
 
 Spec #20 is about 36 KB. Read it with `gh api repos/sivaratrisrinivas/ode/issues/20 --jq .body | grep -n -i <topic>`, or the sections your ticket cites, not whole.
 
+Without `gh`, the repo is public: read with `curl https://api.github.com/repos/sivaratrisrinivas/ode/issues/<number>`. Writes (comment, close, label) need `gh auth login`.
+
 Use files with actual newlines for multiline bodies.
 The CLI infers the repository from the Git remote.
 
