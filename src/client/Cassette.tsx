@@ -83,6 +83,7 @@ function Row({
   text,
   span,
   locked = false,
+  lockedLabel = "Locked line",
   fresh = false,
   now,
   onPlay,
@@ -91,6 +92,8 @@ function Row({
   text: string;
   span: { startMs: number; endMs: number };
   locked?: boolean;
+  /** What a screen reader calls this row while it is locked. */
+  lockedLabel?: string;
   /** Just unlocked: the line flares. */
   fresh?: boolean;
   now: number;
@@ -102,7 +105,7 @@ function Row({
       onClick={() => onPlay(span.startMs)}
       className={fresh ? "ode-unlock-line" : undefined}
       aria-current={current}
-      aria-label={locked ? (label === "Chorus" ? "Locked chorus" : "Locked line") : undefined}
+      aria-label={locked ? lockedLabel : undefined}
       title={locked ? "Locked until the friends are paid back far enough" : undefined}
       style={{
         display: "block",
@@ -303,7 +306,7 @@ export function Cassette({ ode, onPaid, title = "Your Ode", quiet = false }: { o
             case "hook":
               return <Row key={key} label="Hook" text={section.text} span={section} now={now} onPlay={play} />;
             case "chorus":
-              return <Row key={key} label="Chorus" text={section.text} span={section} locked={section.locked} now={now} onPlay={play} />;
+              return <Row key={key} label="Chorus" text={section.text} span={section} locked={section.locked} lockedLabel="Locked chorus" now={now} onPlay={play} />;
           }
         })}
       </div>

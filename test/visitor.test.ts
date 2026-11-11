@@ -143,6 +143,33 @@ describe("a copy of the Seeded Ode for each visitor", () => {
       expect((await verses(other))["Tharun"]?.payment).toMatchObject({ amountRepaidCents: 2_500, linesUnlocked: 1 });
     });
 
+    it("forgets the orders the visitor made, so an old order can be neither captured nor counted by the webhook", async () => {
+      const harness = await seededHarness();
+      const { orderId } = await json<{ orderId: string }>(await harness.post("/api/payments/orders", { friend: "Tharun", amountCents: 5_000 }));
+      const capture = await harness.paypal.captureOrder(orderId);
+      if (capture._tag === "err" || capture.value.status !== "COMPLETED") throw new Error("the fake PayPal did not complete the capture");
+
+      await harness.post("/api/demo/reset", {});
+
+      expect((await harness.post("/api/payments/capture", { orderId })).status).toBe(422);
+      const webhook = await harness.anonymous("/api/payments/webhook", {
+        method: "POST",
+        headers: { "content-type": "application/json", "paypal-transmission-sig": "valid" },
+        body: JSON.stringify({
+          id: "WH-2",
+          event_type: "PAYMENT.CAPTURE.COMPLETED",
+          resource: {
+            id: capture.value.captureId,
+            status: "COMPLETED",
+            amount: { currency_code: "USD", value: "50.00" },
+            supplementary_data: { related_ids: { order_id: orderId } },
+          },
+        }),
+      });
+      expect(webhook.status).toBe(200);
+      expect((await verses(harness))["Tharun"]?.payment).toMatchObject({ amountRepaidCents: 0, linesUnlocked: 0 });
+    });
+
     it("leaves the Ode and its audio in place for everyone", async () => {
       const harness = await seededHarness();
 

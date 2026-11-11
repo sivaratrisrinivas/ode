@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { OdeStudio } from "./OdeStudio.tsx";
-import { failureMessage, Warnings } from "./messages.tsx";
+import { failureMessage, UNREACHABLE, Warnings } from "./messages.tsx";
 
 interface LedgerRow {
   friend: string;
@@ -121,7 +121,7 @@ export function App({ quiet = false }: { quiet?: boolean }) {
       setVersion((v) => v + 1);
       setLoad({ status: "ready", ledger });
     } catch {
-      setBuildError("Couldn’t reach Ode. Check your connection and try again.");
+      setBuildError(UNREACHABLE);
     } finally {
       setBuilding(false);
     }

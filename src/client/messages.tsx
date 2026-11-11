@@ -1,5 +1,8 @@
 import type { ReactElement } from "react";
 
+/** What the page says when a request never got an answer. */
+export const UNREACHABLE = "Couldn’t reach Ode. Check your connection and try again.";
+
 /** The `error` message of a failed API response, or a generic one. */
 export async function failureMessage(res: Response): Promise<string> {
   const body: unknown = await res.json().catch(() => undefined);

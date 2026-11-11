@@ -1,6 +1,6 @@
 import type { PaymentStore } from "./payments.ts";
 import type { Sql } from "./ports.ts";
-import { parseVisitorId } from "./visitor.ts";
+import { parseVisitorId } from "./visitor-id.ts";
 
 /**
  * Create the Postgres payment store.
@@ -41,6 +41,7 @@ export function createPaymentStore(sql: Sql): PaymentStore {
 
     async reset(visitor) {
       await sql.query("delete from payments where visitor = $1", [visitor]);
+      await sql.query("delete from payment_orders where visitor = $1", [visitor]);
     },
 
     async hasCapture(captureId) {

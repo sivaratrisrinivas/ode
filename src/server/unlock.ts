@@ -32,3 +32,15 @@ export function nextLineAtCents(owedCents: number, repaidCents: number): number 
 export function chorusDropped(standings: readonly { amountOwedCents: number; amountRepaidCents: number }[]): boolean {
   return standings.length > 0 && standings.every((standing) => standing.amountRepaidCents >= standing.amountOwedCents);
 }
+
+/**
+ * The chorus, locked until every friend is fully repaid. The one place the payer's page and a friend's page decide
+ * this, so they cannot disagree.
+ *
+ * @param chorus - The chorus section.
+ * @param standings - Each friend who has an amount owed.
+ * @returns The chorus with `locked` set; locked when `chorusDropped` is false, so with no standings it stays locked.
+ */
+export function withChorusLock<Chorus extends object>(chorus: Chorus, standings: readonly { amountOwedCents: number; amountRepaidCents: number }[]) {
+  return { ...chorus, locked: !chorusDropped(standings) };
+}

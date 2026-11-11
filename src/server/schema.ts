@@ -1,3 +1,4 @@
+import { DEFAULT_TRIP } from "./ledger.ts";
 import { ODE_FAILURE_TAGS } from "./ode-run.ts";
 import type { Sql } from "./ports.ts";
 
@@ -17,8 +18,8 @@ export async function migrate(sql: Sql): Promise<void> {
        warnings jsonb not null default '[]'
      )`,
   );
-  // Ledgers saved before #30 have no trip name; they read as "Our trip".
-  await sql.query(`alter table ledger add column if not exists trip text not null default 'Our trip'`);
+  // Ledgers saved before #30 have no trip name; they read as the default trip name.
+  await sql.query(`alter table ledger add column if not exists trip text not null default '${DEFAULT_TRIP.replaceAll("'", "''")}'`);
   await sql.query(
     `create table if not exists ledger_friends (
        friend text primary key,

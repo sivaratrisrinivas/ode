@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactElement } from "react";
-import { failureMessage } from "./messages.tsx";
+import { failureMessage, UNREACHABLE } from "./messages.tsx";
 
 /** One friend the right pane can show, and the page their private link opens. */
 interface FriendLink {
@@ -61,7 +61,7 @@ export function SplitScreen(): ReactElement {
       if (!res.ok) return setResetError(await failureMessage(res));
       setCopy((n) => n + 1);
     } catch {
-      setResetError("Couldn’t reach Ode. Check your connection and try again.");
+      setResetError(UNREACHABLE);
     } finally {
       setResetting(false);
     }

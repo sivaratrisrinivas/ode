@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { failureMessage, Warnings } from "./messages.tsx";
+import { failureMessage, UNREACHABLE, Warnings } from "./messages.tsx";
 
 const MAX_LINE_LENGTH = 200;
 
@@ -57,7 +57,7 @@ function LineField({ label, line, target, onSaved }: { label: string; line: Line
       setText(saved.text);
       onSaved(saved);
     } catch {
-      setProblem("Couldn’t reach Ode. Check your connection and try again.");
+      setProblem(UNREACHABLE);
     }
   }
 
@@ -127,7 +127,7 @@ export function LyricsPreview({ onFlagged }: { onFlagged: (count: number | null)
       setGeneration((g) => g + 1);
       setLoad({ status: "ready", lyrics });
     } catch {
-      setWriteError("Couldn’t reach Ode. Check your connection and try again.");
+      setWriteError(UNREACHABLE);
     } finally {
       setWriting(false);
     }

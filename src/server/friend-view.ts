@@ -1,7 +1,7 @@
-import type { ChorusSection, Section } from "./ode.ts";
+import type { Section, VerseSection } from "./ode.ts";
 import type { FriendStanding } from "./payments.ts";
 import { err, ok, type Result } from "./result.ts";
-import { chorusDropped } from "./unlock.ts";
+import { withChorusLock } from "./unlock.ts";
 
 /** The link token belongs to nobody: it was never given out, or the ledger it was made for has been replaced. */
 export class UnknownLink extends Error {
@@ -43,37 +43,38 @@ function youJson({ amountOwedCents, amountRepaidCents, linesUnlocked, nextLineAt
   return { amountOwedCents, amountRepaidCents, linesUnlocked, nextLineAtCents };
 }
 
-/**
- * A verse's lines, each locked or not: the first `linesUnlocked` of the friend's standing are clear. The one place the
- * payer's page and a friend's page decide this, so they cannot disagree. A friend with no standing has every line locked.
- */
-export function withLocks<Line extends object>(lines: readonly Line[], standing: FriendStanding | undefined) {
+/** A verse's lines, each locked or not: the first `linesUnlocked` of the friend's standing are clear. A friend with no standing has every line locked. */
+function withLocks<Line extends object>(lines: readonly Line[], standing: FriendStanding | undefined) {
   return lines.map((line, index) => ({ ...line, locked: index >= (standing?.linesUnlocked ?? 0) }));
 }
 
 /**
- * The chorus, locked until every friend is fully repaid. The one place the payer's page and a friend's page decide
- * this, so they cannot disagree. With no standings (nobody has an amount owed) the chorus stays locked.
+ * The Ode's sections with their locks: every verse with each of its lines locked or not, the chorus locked or dropped,
+ * and whatever else a reader sees on a verse. The one place the payer's page and a friend's page decide what is
+ * locked, so they cannot disagree and a new kind of locked section is added once.
+ *
+ * @param sections - The Ode's sections, in song order.
+ * @param standings - Every friend's standing.
+ * @param verseExtras - What a reader adds to each verse (an amount, a link) given the friend's standing, which is undefined for a friend with none.
  */
-export function withChorusLock(chorus: ChorusSection, standings: readonly FriendStanding[]) {
-  return { ...chorus, locked: !chorusDropped(standings) };
-}
-
-/**
- * The Ode's sections for one friend: every verse with each of its lines locked or not, the chorus locked or dropped,
- * and amounts only on the viewing friend's own verse.
- */
-function friendSectionsJson(sections: readonly Section[], standings: readonly FriendStanding[], viewer: string) {
+export function lockedSections(
+  sections: readonly Section[],
+  standings: readonly FriendStanding[],
+  verseExtras: (verse: VerseSection, standing: FriendStanding | undefined) => object,
+) {
   return sections.map((section) => {
     if (section.kind === "chorus") return withChorusLock(section, standings);
     if (section.kind !== "verse") return section;
     const standing = standings.find((candidate) => candidate.friend === section.friend);
-    return {
-      ...section,
-      lines: withLocks(section.lines, standing),
-      payment: standing !== undefined && section.friend === viewer ? youJson(standing) : null,
-    };
+    return { ...section, lines: withLocks(section.lines, standing), ...verseExtras(section, standing) };
   });
+}
+
+/** The Ode's sections for one friend: amounts only on the viewing friend's own verse. */
+function friendSectionsJson(sections: readonly Section[], standings: readonly FriendStanding[], viewer: string) {
+  return lockedSections(sections, standings, (verse, standing) => ({
+    payment: standing !== undefined && verse.friend === viewer ? youJson(standing) : null,
+  }));
 }
 
 /**

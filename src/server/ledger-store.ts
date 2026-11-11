@@ -30,12 +30,21 @@ const selectFriends = "select friend, amount_owed_cents, amount_status, inside_j
  * @returns A store backed by the `ledger` and `ledger_friends` tables.
  */
 export function createLedgerStore(sql: Sql): LedgerStore {
+  /** The saved ledger's trip name; `DEFAULT_TRIP` when there is no ledger. */
+  async function readTrip(): Promise<string> {
+    const { rows } = await sql.query<{ trip: string }>("select trip from ledger where id = 1");
+    return rows[0]?.trip ?? DEFAULT_TRIP;
+  }
+
   async function read(): Promise<StoredLedger> {
-    const meta = await sql.query<{ notes: string; trip: string; warnings: string[] }>("select notes, trip, warnings from ledger where id = 1");
-    const friends = await sql.query<FriendRecord>(selectFriends);
+    const [meta, friends, trip] = await Promise.all([
+      sql.query<{ notes: string; warnings: string[] }>("select notes, warnings from ledger where id = 1"),
+      sql.query<FriendRecord>(selectFriends),
+      readTrip(),
+    ]);
     return {
       notes: meta.rows[0]?.notes ?? "",
-      trip: meta.rows[0]?.trip ?? DEFAULT_TRIP,
+      trip,
       warnings: meta.rows[0]?.warnings ?? [],
       rows: friends.rows.map(toRow),
     };
@@ -44,10 +53,7 @@ export function createLedgerStore(sql: Sql): LedgerStore {
   return {
     read,
 
-    async trip() {
-      const { rows } = await sql.query<{ trip: string }>("select trip from ledger where id = 1");
-      return rows[0]?.trip ?? DEFAULT_TRIP;
-    },
+    trip: readTrip,
 
     async replace(ledger) {
       await sql.transaction(async (tx) => {

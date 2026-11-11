@@ -4,7 +4,7 @@ import { UnknownFriend } from "./ledger.ts";
 import { PayPalUnavailable, type PayPal } from "./ports.ts";
 import { err, ok, type Result } from "./result.ts";
 import { linesUnlocked, nextLineAtCents } from "./unlock.ts";
-import type { VisitorId } from "./visitor.ts";
+import type { VisitorId } from "./visitor-id.ts";
 
 /** What the payments service needs from storage: each captured payment, kept for good, and whose copy of the Ode it counts in. */
 export interface PaymentStore {
@@ -16,7 +16,7 @@ export interface PaymentStore {
   recordOrder(orderId: string, visitor: VisitorId): Promise<void>;
   /** The visitor an order was made for; undefined for an order this app never made. */
   orderVisitor(orderId: string): Promise<VisitorId | undefined>;
-  /** Forget every payment in the visitor's copy, so it is unpaid again. Other visitors' copies are untouched. */
+  /** Forget every payment and every order in the visitor's copy, so it is unpaid again. Other visitors' copies are untouched. */
   reset(visitor: VisitorId): Promise<void>;
   /** Whether a capture of this order has been recorded, whichever of the capture response and the webhook recorded it. */
   hasOrder(orderId: string): Promise<boolean>;
@@ -165,7 +165,8 @@ export interface Payments {
    */
   confirm(payment: CapturedPayment): Promise<Result<"recorded" | "ignored", PayPalUnavailable>>;
   /**
-   * Put the visitor's copy back to unpaid: forget every payment counted in it.
+   * Put the visitor's copy back to unpaid: forget every payment counted in it and every order made for it, so an old
+   * order can no longer be captured or counted by the webhook.
    *
    * @param visitor - Whose copy to reset; other visitors' copies are untouched.
    */

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactElement } from "react";
-import { failureMessage } from "./messages.tsx";
+import { failureMessage, UNREACHABLE } from "./messages.tsx";
 import { loadPayPalSdk } from "./paypal-sdk.ts";
 
 /** Where one friend stands, as the API tells the page. */
@@ -25,7 +25,6 @@ function parseDollars(text: string): number | undefined {
 
 const DID_NOT_GO_THROUGH = "Your payment didn't go through. Nothing was sent.";
 const NEEDS_AMOUNT = "Enter an amount like 50 or 47.50.";
-const UNREACHABLE = "Couldn’t reach Ode. Check your connection and try again.";
 
 /** Create the order for `friend`; the reply's `orderId`, or the message to show the payer. */
 async function createOrder(friend: string, amountCents: number): Promise<{ orderId: string } | { problem: string }> {

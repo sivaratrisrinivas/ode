@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactElement } from "react";
 import { Cassette, type ReadyOde } from "./Cassette.tsx";
 import { LyricsPreview } from "./LyricsPreview.tsx";
-import { failureMessage } from "./messages.tsx";
+import { failureMessage, UNREACHABLE } from "./messages.tsx";
 
 interface Step {
   name: string;
@@ -87,7 +87,7 @@ export function OdeStudio({ quiet = false }: { quiet?: boolean }): ReactElement 
       const started: OdeResponse = await res.json();
       setLoad(started);
     } catch {
-      setStartError("Couldn’t reach Ode. Check your connection and try again.");
+      setStartError(UNREACHABLE);
     }
   }
 
