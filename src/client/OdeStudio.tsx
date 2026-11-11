@@ -41,9 +41,9 @@ function Steps({ steps }: { steps: Step[] }) {
 
 /**
  * The lyrics to review and the one "Make the Ode" action; then the status steps while it is made,
- * a retry if it fails, and the cassette to play once it is ready.
+ * a retry if it fails, and the cassette to play once it is ready. `quiet` is passed on to the cassette.
  */
-export function OdeStudio(): ReactElement {
+export function OdeStudio({ quiet = false }: { quiet?: boolean }): ReactElement {
   const [load, setLoad] = useState<Load>({ status: "loading" });
   const [startError, setStartError] = useState<string | null>(null);
   // Lines flagged in the lyrics preview; the Ode is not made while any is, or before the preview has said.
@@ -100,7 +100,7 @@ export function OdeStudio(): ReactElement {
       </>
     );
   }
-  if (load.status === "ready") return <Cassette ode={load} onPaid={() => void refresh()} />;
+  if (load.status === "ready") return <Cassette ode={load} onPaid={() => void refresh()} quiet={quiet} />;
 
   return (
     <>

@@ -80,7 +80,12 @@ function Row({ row, onChange }: { row: LedgerRow; onChange: (row: LedgerRow) => 
   );
 }
 
-export function App() {
+/**
+ * The payer's page.
+ *
+ * @param props - `quiet`: do not play the audio of a line that has just unlocked (the split screen's friend pane does).
+ */
+export function App({ quiet = false }: { quiet?: boolean }) {
   const [load, setLoad] = useState<Load>({ status: "loading" });
   const [notes, setNotes] = useState("");
   const [building, setBuilding] = useState(false);
@@ -173,7 +178,7 @@ export function App() {
             </section>
           )}
 
-          {load.ledger.rows.length > 0 && <OdeStudio key={version} />}
+          {load.ledger.rows.length > 0 && <OdeStudio key={version} quiet={quiet} />}
         </>
       )}
     </main>

@@ -1,8 +1,12 @@
 // Drives a running `npm run dev:fake` (PORT, default 3000) through the whole page: build the ledger, write the
 // lyrics, make the Ode, open Tharun's private friend link in a second tab, pay Tharun $50. Prints the unlock banner,
 // how long the friend's open tab took to show the unlock, and where playback was asked to start, and saves a
-// screenshot of each tab (the friend's is saved beside it, as friend-<name>). See docs/agents/run.md. Usage: node scripts/drive-fake.mjs [screenshot.png]
-import { chromium } from "/home/srinivas/.bun/install/cache/playwright-core@1.63.0@@@1/index.mjs";
+// screenshot of each tab (the friend's is saved beside it, as friend-<name>). Then it opens /split, the payer's page
+// beside a friend's, and checks that a payment on the left unlocks the line on the right, that the picker switches the
+// right pane between the friends, and that the panes stack on a phone. See docs/agents/run.md. Usage: node scripts/drive-fake.mjs [screenshot.png]
+import assert from "node:assert/strict";
+// PLAYWRIGHT_CORE overrides where playwright-core is imported from (it is not in node_modules).
+const { chromium } = await import(process.env.PLAYWRIGHT_CORE ?? "/home/srinivas/.bun/install/cache/playwright-core@1.63.0@@@1/index.mjs");
 
 const port = process.env.PORT ?? "3000";
 const screenshot = process.argv[2] ?? "unlock.png";
@@ -53,6 +57,47 @@ try {
   await page.request.post(`http://localhost:${port}/api/ledger`, { data: { notes: "Trip notes: Tharun paid for the car, 390 dollars, split four ways." } });
   await friend.getByText(/link doesn.t work any more/).waitFor({ timeout: 15_000 });
   console.log("friend after the ledger was rebuilt:", await friend.locator("main").innerText());
+
+  // The split screen: the payer's page on the left, a friend's view on the right. The ledger was just rebuilt, so the
+  // left pane makes a new Ode first.
+  await page.goto(`http://localhost:${port}/split`);
+  const left = page.frameLocator('iframe[title="Payer"]');
+  const right = page.frameLocator('iframe[title="Friend view"]');
+  await left.getByRole("button", { name: "Write the lyrics" }).click();
+  await left.getByRole("button", { name: "Make the Ode" }).click();
+  await left.getByText("Your Ode").waitFor({ timeout: 30_000 });
+  await right.getByRole("heading", { name: "An Ode for Tharun" }).waitFor({ timeout: 15_000 });
+
+  await left.getByLabel(/Pay Tharun/).fill("50");
+  await left.getByRole("button", { name: "Pay Tharun" }).click();
+  const splitPaidAt = Date.now();
+  await right.getByRole("status").waitFor();
+  const splitMs = Date.now() - splitPaidAt;
+  console.log(`split screen: the right pane showed the unlock after ${splitMs} ms:`, await right.getByRole("status").innerText());
+  // "Within ~1 s" of the payment, plus the payer's order and capture requests (see the first check above); a loaded machine gets room.
+  assert.ok(splitMs < 2500, `the right pane took ${splitMs} ms to show the unlock`);
+
+  // Only the friend's pane sings the unlock; the payer's pane stays quiet so the two do not play over each other.
+  const playsIn = (match) => page.frames().find((frame) => match.test(frame.url()))?.evaluate(() => window.__plays);
+  assert.deepEqual(await playsIn(/\/\?quiet/), [], "the payer's pane played the unlock");
+  assert.ok(((await playsIn(/\/f\//)) ?? []).length >= 1, "the friend's pane did not play the unlock");
+
+  for (const name of ["Vikram", "Sahiti", "Tharun"]) {
+    await page.getByRole("button", { name }).click();
+    await right.getByRole("heading", { name: `An Ode for ${name}` }).waitFor({ timeout: 15_000 });
+  }
+  console.log("split screen: the picker switched the right pane between Tharun, Vikram and Sahiti");
+
+  const box = async (title) => (await page.locator(`iframe[title="${title}"]`).boundingBox()) ?? assert.fail(`no ${title} pane`);
+  const [payer, friend2] = [await box("Payer"), await box("Friend view")];
+  // The friend's pane sits under the picker, so it starts a little lower than the payer's; side by side means to its right and overlapping it vertically.
+  assert.ok(friend2.x >= payer.x + payer.width - 1 && friend2.y < payer.y + payer.height, "panes are not side by side on a wide screen");
+  await page.setViewportSize({ width: 390, height: 900 });
+  const [narrowPayer, narrowFriend] = [await box("Payer"), await box("Friend view")];
+  assert.ok(narrowFriend.y >= narrowPayer.y + narrowPayer.height - 1 && Math.abs(narrowFriend.x - narrowPayer.x) < 2, "panes do not stack on a phone");
+  assert.ok(narrowPayer.width <= 390 && narrowFriend.width <= 390, "a pane is wider than the phone");
+  console.log("split screen: side by side when wide, stacked at phone width");
+  await page.screenshot({ path: `split-${screenshot}`, fullPage: true });
 } finally {
   await browser.close();
 }

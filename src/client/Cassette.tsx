@@ -129,9 +129,10 @@ function Row({
  * the unlock, flares those lines and plays the first of them.
  *
  * @param props - The Ode with each line's lock, and what to do after a payment so the page shows the new locks; without
- *   `onPaid` (a friend's page) there are no controls to pay, and no verse shows a friend's link.
+ *   `onPaid` (a friend's page) there are no controls to pay, and no verse shows a friend's link. With `quiet` an unlock is
+ *   still announced and flared but not played, for a page shown beside the friend's, whose pane plays it.
  */
-export function Cassette({ ode, onPaid, title = "Your Ode" }: { ode: ReadyOde; onPaid?: () => void; title?: string }): ReactElement {
+export function Cassette({ ode, onPaid, title = "Your Ode", quiet = false }: { ode: ReadyOde; onPaid?: () => void; title?: string; quiet?: boolean }): ReactElement {
   const audio = useRef<HTMLAudioElement>(null);
   const filter = useRef<{ context: AudioContext; lowpass: BiquadFilterNode } | null>(null);
   const frame = useRef(0);
@@ -164,7 +165,7 @@ export function Cassette({ ode, onPaid, title = "Your Ode" }: { ode: ReadyOde; o
     if (first === undefined || last === undefined) return;
     setUnlocked(fresh);
     const element = audio.current;
-    if (element !== null) {
+    if (element !== null && !quiet) {
       element.currentTime = first.startMs / 1000;
       stopAtMs.current = last.endMs;
       void lowpass()?.context.resume();
