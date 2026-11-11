@@ -6,6 +6,8 @@
 // right pane between the friends, that the chorus stays locked on both panes until every friend is fully repaid and then
 // reads "Full Ode dropped · Florida '25", and that the panes stack on a phone. Last, a second browser context (its own
 // cookie, so its own copy of the Ode) checks that payments, reloads, "Reset demo" and a cleared cookie act on one copy only.
+// The release date is checked on both: the payer picks it at "Make the Ode", every pane reads "N of 3 friends · D days to
+// drop", and moving the fake clock past it (dev-fake's /dev/clock/advance-days) turns it into "Delayed" with the chorus locked.
 // See docs/agents/run.md. Usage: node scripts/drive-fake.mjs [screenshot.png]
 import assert from "node:assert/strict";
 // PLAYWRIGHT_CORE overrides where playwright-core is imported from (it is not in node_modules).
@@ -30,18 +32,26 @@ await page.addInitScript(() => {
   };
 });
 
+// The fake clock's day, plus an offset, as the page's date input wants it: dev-fake's clock is fixed, so the driver reads it.
+const fakeNow = new Date((await (await fetch(`http://localhost:${port}/api/health`)).json()).now);
+const dayIso = (offset) => new Date(fakeNow.getTime() + offset * 86_400_000).toISOString().slice(0, 10);
+
 try {
   await page.goto(`http://localhost:${port}/payer`);
   await page.locator("textarea").fill("Trip notes: Tharun paid for the car, 390 dollars, split four ways.");
   await page.getByRole("button", { name: "Build the ledger" }).click();
   await page.getByRole("button", { name: "Write the lyrics" }).click();
+  await page.getByLabel("Release date").fill(dayIso(22));
   await page.getByRole("button", { name: "Make the Ode" }).click();
   await page.getByText("Your Ode").waitFor({ timeout: 30_000 });
+  assert.equal(await page.getByLabel("Release date").innerText(), "0 of 3 friends · 22 days to drop", "the payer's page does not show the countdown");
   const link = await page.getByRole("link", { name: /Tharun.s private link/ }).getAttribute("href");
   const friend = await context.newPage();
   await friend.goto(`http://localhost:${port}${link}`);
   await friend.getByRole("heading", { name: "An Ode for Tharun" }).waitFor();
   console.log("friend sees:", await friend.getByLabel("Your money").innerText());
+  assert.equal(await friend.getByLabel("Release date").innerText(), "0 of 3 friends · 22 days to drop", "the friend's page does not show the countdown");
+  console.log("release date: both pages read", JSON.stringify(await friend.getByLabel("Release date").innerText()));
 
   await page.getByLabel(/Pay Tharun/).fill("50");
   await page.getByRole("button", { name: "Pay Tharun" }).click();
@@ -67,6 +77,7 @@ try {
   const left = page.frameLocator('iframe[title="Payer"]');
   const right = page.frameLocator('iframe[title="Friend view"]');
   await left.getByRole("button", { name: "Write the lyrics" }).click();
+  await left.getByLabel("Release date").fill(dayIso(10));
   await left.getByRole("button", { name: "Make the Ode" }).click();
   await left.getByText("Your Ode").waitFor({ timeout: 30_000 });
   await right.getByRole("heading", { name: "An Ode for Tharun" }).waitFor({ timeout: 15_000 });
@@ -94,6 +105,9 @@ try {
   // The chorus drop: locked on both panes until every friend is fully repaid; the last full repayment drops it on both.
   // The fake ledger owes Tharun $97.50 (paid $50 above), Vikram $82.50 and Sahiti $77.50.
   const dropText = "Full Ode dropped · Florida '25";
+  const countdownOf = (pane) => pane.getByLabel("Release date").innerText();
+  assert.equal(await countdownOf(left), "0 of 3 friends · 10 days to drop", "the payer's pane does not show the countdown");
+  assert.equal(await countdownOf(right), "0 of 3 friends · 10 days to drop", "the friend's pane does not show the countdown");
   for (const [pane, name] of [[left, "payer"], [right, "friend"]]) {
     assert.equal(await pane.getByText(/Full Ode dropped/).count(), 0, `the ${name}'s pane shows the drop before anyone is repaid`);
     assert.equal(await pane.getByLabel("Locked chorus").count(), 1, `the ${name}'s pane does not show the chorus locked`);
@@ -108,12 +122,38 @@ try {
   await left.getByText("Sahiti: lines 1, 2, 3 unlocked!").waitFor();
   assert.equal(await left.getByText(/Full Ode dropped/).count(), 0, "the drop shows while Sahiti is a cent short");
   assert.equal(await right.getByText(/Full Ode dropped/).count(), 0, "the friend's pane shows the drop while Sahiti is a cent short");
+  assert.equal(await countdownOf(left), "2 of 3 friends · 10 days to drop", "the payer's countdown does not count repaid friends");
+
+  // The date passes with Sahiti a cent short: both panes say delayed, gently, and the chorus stays locked. The friend's open
+  // pane follows by itself; the payer's page asks again on a reload.
+  const delayText = `Delayed · 2 of 3 friends repaid · was due ${dayIso(10)}`;
+  const clock = await fetch(`http://localhost:${port}/dev/clock/advance-days`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ days: 11 }),
+  });
+  assert.equal(clock.status, 200, "dev-fake did not move the clock");
+  const delayedAt = Date.now();
+  await right.getByLabel("Release date").filter({ hasText: delayText }).waitFor({ timeout: 15_000 });
+  const delayMs = Date.now() - delayedAt;
+  console.log(`release date: the friend's open pane showed "${delayText}" after ${delayMs} ms`);
+  assert.ok(delayMs < 2500, `the friend's pane took ${delayMs} ms to show the delay`);
+  await page.reload();
+  await left.getByLabel("Release date").filter({ hasText: delayText }).waitFor({ timeout: 15_000 });
+  for (const [pane, name] of [[left, "payer"], [right, "friend"]]) {
+    assert.equal(await pane.getByLabel("Locked chorus").count(), 1, `the ${name}'s pane unlocked the chorus when the date passed`);
+    assert.equal(await pane.getByText(/Full Ode dropped/).count(), 0, `the ${name}'s pane dropped the chorus when the date passed`);
+  }
+  await page.screenshot({ path: `delayed-${screenshot}` });
+
   await left.getByLabel(/Pay Sahiti/).fill("0.01");
   await left.getByRole("button", { name: "Pay Sahiti" }).click();
   const droppedAt = Date.now();
   await right.getByText(dropText).waitFor();
   const dropMs = Date.now() - droppedAt;
   await left.getByText(dropText).waitFor();
+  assert.equal(await left.getByLabel("Release date").count(), 0, "the payer's pane still counts down after the drop");
+  assert.equal(await right.getByLabel("Release date").count(), 0, "the friend's pane still counts down after the drop");
   console.log(`split screen: the last payment dropped the chorus, "${dropText}", on the friend's pane after ${dropMs} ms and on the payer's`);
   assert.ok(dropMs < 2500, `the friend's pane took ${dropMs} ms to show the drop`);
   for (const [pane, name] of [[left, "payer"], [right, "friend"]]) {

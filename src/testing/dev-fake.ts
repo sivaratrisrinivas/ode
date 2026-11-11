@@ -48,6 +48,14 @@ const api = createApi({
 });
 
 const app = new Hono();
+// Dev only: the fake clock never moves by itself, so `scripts/drive-fake.mjs` moves it to pass a release date.
+app.post("/dev/clock/advance-days", async (c) => {
+  const body: unknown = await c.req.json().catch(() => undefined);
+  const days = typeof body === "object" && body !== null ? Reflect.get(body, "days") : undefined;
+  if (typeof days !== "number" || !Number.isInteger(days) || days < 0) return c.json({ error: "Send { days } as a whole number." }, 422);
+  ports.clock.advance(days * 24 * 60 * 60 * 1000);
+  return c.json({ now: ports.clock.now().toISOString() });
+});
 app.route("/", api);
 app.use("/*", serveStatic({ root: "./dist" }));
 app.get("*", serveStatic({ path: "./dist/index.html" }));
