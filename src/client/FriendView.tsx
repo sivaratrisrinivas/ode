@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactElement } from "react";
-import { Cassette, type ReadyOde, type Section, type VerseSection } from "./Cassette.tsx";
+import { Cassette, type ReadyOde, type Release, type Section, type VerseSection } from "./Cassette.tsx";
 
 /** What a friend's page is told about their own money. */
 interface You {
@@ -16,7 +16,7 @@ type FriendOde =
   | { status: "none" }
   | { status: "making"; steps: { name: string; state: string }[] }
   | { status: "failed"; error: string }
-  | { status: "ready"; durationMs: number; audioUrl: string; trip: string; dropped: boolean; sections: (Exclude<Section, VerseSection> | FriendVerse)[] };
+  | { status: "ready"; durationMs: number; audioUrl: string; trip: string; dropped: boolean; release: Release | null; sections: (Exclude<Section, VerseSection> | FriendVerse)[] };
 
 /** What `GET /api/friends/:token` and each `state` event carry. */
 interface FriendViewState {
@@ -38,6 +38,7 @@ function playable(ode: FriendOde): ReadyOde | null {
     audioUrl: ode.audioUrl,
     trip: ode.trip,
     dropped: ode.dropped,
+    release: ode.release,
     sections: ode.sections.map((section) => (section.kind === "verse" ? { ...section, payment: null } : section)),
   };
 }

@@ -21,7 +21,7 @@ import type { Section } from "./ode.ts";
 import type { OdeWorkflow, Ports, Sql } from "./ports.ts";
 import { ok, type Result } from "./result.ts";
 import * as TripNotes from "./trip-notes.ts";
-import { chorusDropped } from "./unlock.ts";
+import { chorusDropped, releaseStatus } from "./unlock.ts";
 import { visitorMiddleware, type VisitorEnv } from "./visitor.ts";
 import type { VisitorId } from "./visitor-id.ts";
 
@@ -102,6 +102,7 @@ function startFailure(error: StartOdeError): { status: 409 | 422 | 429 | 502; me
   switch (error._tag) {
     case "LedgerNotReady":
     case "LyricsFlagged":
+    case "InvalidReleaseDate":
       return { status: 422, message: error.message };
     case "OdeAlreadyMade":
       return { status: 409, message: error.message };
@@ -136,10 +137,11 @@ function sectionsJson(sections: readonly Section[], standings: readonly FriendSt
   }));
 }
 
-/** What both pages' Ode shares: every friend's standing and what the trip is called, read for one visitor's copy, and where its audio is. */
+/** What both pages' Ode shares: every friend's standing, what the trip is called, the time and where its audio is, read for one visitor's copy. */
 interface OdeFinish {
   standings: readonly FriendStanding[];
   trip: string;
+  now: Date;
   audioUrl: string;
 }
 
@@ -162,6 +164,7 @@ function odeJson(status: OdeStatus, finish: OdeFinish, sections: (sections: read
         audioUrl: finish.audioUrl,
         trip: finish.trip,
         dropped: chorusDropped(finish.standings),
+        release: status.releaseDate === undefined ? null : releaseStatus(status.releaseDate, finish.now, finish.standings),
         sections: sections(status.ode.sections),
       };
   }
@@ -360,10 +363,10 @@ export function createApi({
   api.patch("/api/lyrics/hook", (c) => editLine(c, ok({ _tag: "hook" })));
   api.patch("/api/lyrics/chorus", (c) => editLine(c, ok({ _tag: "chorus" })));
 
-  /** The standings in the copy of `visitor`, the trip's name and where the audio is, which both pages' Odes carry. */
+  /** The standings in the copy of `visitor`, the trip's name, the time and where the audio is, which both pages' Odes carry. */
   async function finishOf(scope: Scope, copy: VisitorId, audioUrl: string): Promise<OdeFinish> {
     const [standings, trip] = await Promise.all([scope.payments.standings(copy), scope.ledger.trip()]);
-    return { standings, trip, audioUrl };
+    return { standings, trip, now: ports.clock.now(), audioUrl };
   }
 
   /** The Ode as the payer's page sees it: each verse with its friend's standing and private link. */
@@ -378,9 +381,10 @@ export function createApi({
   });
 
   api.post("/api/ode", async (c) => {
+    const body: unknown = await c.req.json().catch(() => undefined);
     const visitor = c.get("visitor");
     const scope = await scopeOf(visitor);
-    const started = await scope.maker.start();
+    const started = await scope.maker.start(field(body, "releaseDate"));
     if (started._tag === "err") {
       // The day's new Odes went while the judge was writing: nothing was made, and they are back on the Seeded Ode.
       if (started.error._tag === "CapReached") await judges.leave(visitor);

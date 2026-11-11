@@ -27,12 +27,22 @@ export type Section =
   | { kind: "hook"; text: string; startMs: number; endMs: number }
   | { kind: "chorus"; text: string; startMs: number; endMs: number; locked: boolean };
 
+/** Where the Ode stands against the release date the payer promised; `countdown` is the server's line to show, null once the chorus has dropped. */
+export interface Release {
+  date: string;
+  daysToDrop: number | null;
+  delayed: boolean;
+  countdown: string | null;
+}
+
 /** A made Ode, ready to play. `dropped` is the server's word that every friend is repaid; `trip` is what to call the trip once it is. */
 export interface ReadyOde {
   durationMs: number;
   audioUrl: string;
   trip: string;
   dropped: boolean;
+  /** Null when the Ode was made without a release date. */
+  release: Release | null;
   sections: Section[];
 }
 
@@ -239,6 +249,21 @@ export function Cassette({ ode, onPaid, title = "Your Ode", quiet = false }: { o
           style={{ background: "#ffd600", color: "#000", border: "4px solid #000", borderRadius: 12, padding: "0.75rem 1rem", margin: "0 0 0.75rem", fontSize: "1.5rem", fontWeight: 800, textAlign: "center" }}
         >
           Full Ode dropped · {ode.trip}
+        </p>
+      )}
+      {ode.release?.countdown != null && (
+        <p
+          aria-label="Release date"
+          style={{
+            margin: "0 0 0.75rem",
+            padding: "0.4rem 0.75rem",
+            borderRadius: 8,
+            fontWeight: 600,
+            background: ode.release.delayed ? "#fff0d6" : "#eef3f8",
+            border: `1px solid ${ode.release.delayed ? "#c77700" : "#9db3c8"}`,
+          }}
+        >
+          {ode.release.countdown}
         </p>
       )}
       {unlocked.length > 0 && (

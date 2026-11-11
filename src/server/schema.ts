@@ -76,7 +76,8 @@ async function createTables(sql: Queryable): Promise<void> {
   await sql.query(
     `create table if not exists odes (
        owner text primary key references ledger (owner) on delete cascade,
-       audio bytea not null
+       audio bytea not null,
+       release_date text check (release_date ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
      )`,
   );
   // The run making the Ode, kept here because the Workflow task and the web service are different processes and both must see
@@ -91,6 +92,7 @@ async function createTables(sql: Queryable): Promise<void> {
        step text not null check (step in ('writing', 'composing', 'finding-lines')),
        started_at timestamptz not null,
        workflow_run_id text check (workflow_run_id <> ''),
+       release_date text check (release_date ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'),
        failure text check (failure in
          ${RUN_FAILURES}),
        failure_message text,
@@ -185,6 +187,8 @@ async function adoptLegacy(tx: Queryable): Promise<void> {
     `alter table ledger_friends add column if not exists link_token text not null unique
        default replace(gen_random_uuid()::text || gen_random_uuid()::text, '-', '')`,
   );
+  await tx.query("alter table ode_runs add column if not exists release_date text");
+  await tx.query("alter table odes add column if not exists release_date text");
   await tx.query("alter table payments add column if not exists order_id text");
   await tx.query("alter table payments add column if not exists visitor text");
   await tx.query("create table if not exists payment_orders (order_id text primary key, visitor text not null)");
@@ -197,7 +201,7 @@ async function adoptLegacy(tx: Queryable): Promise<void> {
        select 'seeded', friend, position, amount_owed_cents, amount_status, inside_joke, link_token from ledger_friends_v1`,
     "insert into lyric_lines (owner, friend, line_no, text, problems) select 'seeded', friend, line_no, text, problems from lyric_lines_v1",
     "insert into lyric_refrains (owner, kind, text, problems) select 'seeded', kind, text, problems from lyric_refrains_v1",
-    "insert into odes (owner, audio) select 'seeded', audio from odes_v1",
+    "insert into odes (owner, audio, release_date) select 'seeded', audio, release_date from odes_v1",
     `insert into ode_sections (owner, position, kind, friend, text, start_ms, end_ms)
        select 'seeded', position, kind, friend, text, start_ms, end_ms from ode_sections_v1`,
     `insert into ode_lines (owner, position, line_no, text, start_ms, end_ms)
@@ -205,8 +209,8 @@ async function adoptLegacy(tx: Queryable): Promise<void> {
     `insert into payments (capture_id, owner, friend, amount_cents, captured_at, order_id, visitor)
        select capture_id, 'seeded', friend, amount_cents, captured_at, order_id, visitor from payments_v1`,
     "insert into payment_orders (order_id, visitor, owner) select order_id, visitor, 'seeded' from payment_orders_v1",
-    `insert into ode_runs (owner, run_id, step, started_at, workflow_run_id, failure, failure_message)
-       select 'seeded', run_id, step, started_at, workflow_run_id, failure, failure_message from ode_runs_v1`,
+    `insert into ode_runs (owner, run_id, step, started_at, workflow_run_id, release_date, failure, failure_message)
+       select 'seeded', run_id, step, started_at, workflow_run_id, release_date, failure, failure_message from ode_runs_v1`,
   ];
   for (const copy of copies) await tx.query(copy);
   for (const table of [...LEGACY_TABLES].reverse()) await tx.query(`drop table ${table}_v1 cascade`);

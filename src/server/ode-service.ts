@@ -5,12 +5,15 @@ import type { LyricsStore } from "./lyrics-service.ts";
 import type { Ode } from "./ode.ts";
 import type { MakingRun, OdeFailure, OdeRun, OdeStep, RunId, WorkflowRunId } from "./ode-run.ts";
 import type { Clock, OdeWorkflow, WorkflowUnavailable } from "./ports.ts";
+import { parseReleaseDate, type InvalidReleaseDate, type ReleaseDate } from "./release-date.ts";
 import { err, ok, type Result } from "./result.ts";
 
 /** What the Ode service needs from storage for the one Ode. */
 export interface OdeStore {
   /** The saved Ode; undefined until one has been made for the current ledger. */
   read(): Promise<Ode | undefined>;
+  /** The release date saved with the Ode; undefined when there is no Ode or it was made without one. It never changes. */
+  releaseDate(): Promise<ReleaseDate | undefined>;
   /** The saved Ode's audio; undefined when there is no Ode. */
   readAudio(): Promise<Uint8Array | undefined>;
   /**
@@ -31,11 +34,12 @@ export interface OdeRuns {
   /** The run in progress or the one that failed; undefined when none is kept. */
   current(): Promise<OdeRun | undefined>;
   /**
-   * Record a new run at the first step, replacing a failed one.
+   * Record a new run at the first step, replacing a failed one, with the release date the payer promised (if any), which
+   * the saved Ode keeps.
    *
    * @returns False, with nothing changed, when an Ode is already saved or a run is already in progress.
    */
-  begin(run: RunId, startedAt: Date): Promise<boolean>;
+  begin(run: RunId, startedAt: Date, releaseDate: ReleaseDate | undefined): Promise<boolean>;
   /** Record the Workflow's own ID for a run in progress. Does nothing when `run` is not in progress. */
   attach(run: RunId, workflowRun: WorkflowRunId): Promise<void>;
   /**
@@ -66,7 +70,7 @@ export class OdeAlreadyMade extends Error {
 }
 
 /** Why a run could not be started. */
-export type StartOdeError = LedgerNotReady | LyricsFlagged | OdeAlreadyMade | CapReached | WorkflowUnavailable;
+export type StartOdeError = LedgerNotReady | LyricsFlagged | InvalidReleaseDate | OdeAlreadyMade | CapReached | WorkflowUnavailable;
 
 /** The run in progress. */
 export interface MakingOde {
@@ -79,16 +83,18 @@ export type OdeStatus =
   | { readonly _tag: "NotMade" }
   | MakingOde
   | { readonly _tag: "Failed"; readonly failure: OdeFailure }
-  | { readonly _tag: "Ready"; readonly ode: Ode };
+  | { readonly _tag: "Ready"; readonly ode: Ode; readonly releaseDate: ReleaseDate | undefined };
 
 /** Starts the pipeline that makes the Ode in the Workflow, and reports how far it got. */
 export interface OdeMaker {
   /**
    * Start making the Ode. A run already in progress is not started twice, by this web service process or any other.
    *
+   * @param releaseDate - The date the payer promises the whole Ode will drop, as sent: undefined for none, otherwise it must
+   *   be a date today or later. It is judged only once no Ode exists and no run is in progress, and it is fixed from then on.
    * @returns The status after the request: the run just started or already in progress, or why none could start.
    */
-  start(): Promise<Result<OdeStatus, StartOdeError>>;
+  start(releaseDate: unknown): Promise<Result<OdeStatus, StartOdeError>>;
   /**
    * The current status, for the payer to poll. A run the Workflow has ended without saving an Ode is recorded as lost
    * here, so a run that died never leaves the payer waiting.
@@ -121,7 +127,7 @@ export function createOdeMaker(deps: {
   clock: Clock;
   ledger: Pick<LedgerStore, "read">;
   lyrics: Pick<LyricsStore, "read">;
-  odes: Pick<OdeStore, "read">;
+  odes: Pick<OdeStore, "read" | "releaseDate">;
   runs: OdeRuns;
   workflow: OdeWorkflow;
   newRunId: () => RunId;
@@ -130,11 +136,13 @@ export function createOdeMaker(deps: {
   /** The run is read before the Ode: a run saves the Ode and clears itself in one commit, so a run seen as gone already has its Ode. */
   async function observe() {
     const run = await deps.runs.current();
-    return { run, ode: await deps.odes.read() };
+    const ode = await deps.odes.read();
+    // Fixed when the Ode is saved, so reading it after the Ode cannot see a different date.
+    return { run, ode, releaseDate: ode === undefined ? undefined : await deps.odes.releaseDate() };
   }
 
-  function toStatus({ run, ode }: Awaited<ReturnType<typeof observe>>): OdeStatus {
-    if (ode !== undefined) return { _tag: "Ready", ode };
+  function toStatus({ run, ode, releaseDate }: Awaited<ReturnType<typeof observe>>): OdeStatus {
+    if (ode !== undefined) return { _tag: "Ready", ode, releaseDate };
     if (run === undefined) return { _tag: "NotMade" };
     return run._tag === "Making" ? { _tag: "Making", step: run.step } : { _tag: "Failed", failure: run.failure };
   }
@@ -169,13 +177,17 @@ export function createOdeMaker(deps: {
     return toStatus(seen);
   }
 
-  async function start(): Promise<Result<OdeStatus, StartOdeError>> {
+  async function start(releaseDate: unknown): Promise<Result<OdeStatus, StartOdeError>> {
     const friends = lyricFriends(await deps.ledger.read());
     if (friends._tag === "err") return err(friends.error);
     // An Ode already made, or a run in progress, is answered as before whatever the lyrics now say.
     const seen = await status();
     if (seen._tag === "Ready") return err(new OdeAlreadyMade());
     if (seen._tag === "Making") return ok(seen);
+
+    // Only now is the release date judged: an Ode or run that exists is answered whatever date this request carries.
+    const date = releaseDate === undefined ? undefined : parseReleaseDate(releaseDate, deps.clock.now());
+    if (date?._tag === "err") return err(date.error);
 
     // Saved lyrics with a flagged line are refused here. With none saved, the run writes them and checks them itself.
     const saved = await deps.lyrics.read();
@@ -191,7 +203,7 @@ export function createOdeMaker(deps: {
     // One statement checks that there is no Ode and no run in progress, and records this run, so two requests (or a
     // request and a run that is just saving) cannot both start a paid song.
     const run = deps.newRunId();
-    if (!(await deps.runs.begin(run, deps.clock.now()))) {
+    if (!(await deps.runs.begin(run, deps.clock.now(), date?.value))) {
       const current = await status();
       return current._tag === "Ready" ? err(new OdeAlreadyMade()) : ok(current);
     }

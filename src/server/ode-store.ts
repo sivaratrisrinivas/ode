@@ -3,6 +3,7 @@ import { makeOde, type Ode, type Section, type TimedLine } from "./ode.ts";
 import { parseRunId, parseWorkflowRunId, type OdeFailure, type OdeRun, type OdeStep, type RunId } from "./ode-run.ts";
 import { parseOwner, type Owner } from "./owner.ts";
 import type { Sql } from "./ports.ts";
+import { parseReleaseDate } from "./release-date.ts";
 
 interface SectionRecord {
   position: number;
@@ -98,6 +99,17 @@ export function createOdeStore(sql: Sql, owner: Owner): OdeStore & OdeRuns {
       return makeOde(read);
     },
 
+    async releaseDate() {
+      const { rows } = await sql.query<{ release_date: string | null }>("select release_date from odes where owner = $1", [owner]);
+      const stored = rows[0]?.release_date ?? null;
+      if (stored === null) return undefined;
+      // The epoch as "now", so a date that has since passed is still read back; only its shape is checked.
+      const parsed = parseReleaseDate(stored, new Date(0));
+      // Defect: only this store writes the column, and it writes a parsed release date.
+      if (parsed._tag === "err") throw new Error(`corrupt odes row: release_date ${stored} is not a date`);
+      return parsed.value;
+    },
+
     async readAudio() {
       const { rows } = await sql.query<{ audio: Uint8Array }>("select audio from odes where owner = $1", [owner]);
       return rows[0]?.audio;
@@ -106,12 +118,16 @@ export function createOdeStore(sql: Sql, owner: Owner): OdeStore & OdeRuns {
     async save(run, ode: Ode, audio) {
       return sql.transaction(async (tx) => {
         // Locked, so the run cannot be marked failed or replaced between this check and the commit.
-        const current = await tx.query("select 1 from ode_runs where owner = $1 and run_id = $2 and failure is null for update", [owner, run]);
-        if (current.rows.length === 0) return false;
+        const current = await tx.query<{ release_date: string | null }>(
+          "select release_date from ode_runs where owner = $1 and run_id = $2 and failure is null for update",
+          [owner, run],
+        );
+        if (current.rows[0] === undefined) return false;
 
         // Deleting the Ode cascades to its sections and lines; the new one goes in as a whole or not at all.
         await tx.query("delete from odes where owner = $1", [owner]);
-        await tx.query("insert into odes (owner, audio) values ($1, $2)", [owner, audio]);
+        // The release date set when the run began is the Ode's, and nothing updates it afterwards.
+        await tx.query("insert into odes (owner, audio, release_date) values ($1, $2, $3)", [owner, audio, current.rows[0].release_date]);
         for (const [position, section] of ode.sections.entries()) {
           await tx.query(
             `insert into ode_sections (owner, position, kind, friend, text, start_ms, end_ms)
@@ -147,18 +163,18 @@ export function createOdeStore(sql: Sql, owner: Owner): OdeStore & OdeRuns {
       return rows[0] === undefined ? undefined : toRun(rows[0]);
     },
 
-    async begin(run, startedAt) {
+    async begin(run, startedAt, releaseDate) {
       // A single statement, so concurrent requests cannot both begin, and no run begins over a saved Ode: the
       // conflict clause only replaces a failed run.
       const { rows } = await sql.query(
-        `insert into ode_runs (owner, run_id, step, started_at)
-         select $3, $1, 'writing', $2 where not exists (select 1 from odes where owner = $3)
+        `insert into ode_runs (owner, run_id, step, started_at, release_date)
+         select $4, $1, 'writing', $2, $3 where not exists (select 1 from odes where owner = $4)
          on conflict (owner) do update set
-           run_id = excluded.run_id, step = 'writing', started_at = excluded.started_at,
+           run_id = excluded.run_id, step = 'writing', started_at = excluded.started_at, release_date = excluded.release_date,
            workflow_run_id = null, failure = null, failure_message = null
          where ode_runs.failure is not null
          returning owner`,
-        [run, startedAt, owner],
+        [run, startedAt, releaseDate ?? null, owner],
       );
       return rows.length > 0;
     },
