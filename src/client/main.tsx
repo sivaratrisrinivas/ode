@@ -2,6 +2,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App.tsx";
 import { FriendView } from "./FriendView.tsx";
+import { SharePage } from "./SharePage.tsx";
 import { SplitScreen } from "./SplitScreen.tsx";
 
 const container = document.getElementById("root");
@@ -12,8 +13,11 @@ if (!container) throw new Error("index.html has no #root element");
 // `/payer` is the payer's page on its own.
 const friendLink = /^\/f\/([^/]+)\/?$/.exec(location.pathname);
 const quiet = new URLSearchParams(location.search).has("quiet");
+// A verse share's link is /s/<token>: public, and showing only what the friend shared.
+const shareLink = /^\/s\/([^/]+)\/?$/.exec(location.pathname);
 
 function page() {
+  if (shareLink?.[1] !== undefined) return <SharePage token={shareLink[1]} />;
   if (friendLink?.[1] !== undefined) return <FriendView token={friendLink[1]} />;
   if (quiet || /^\/payer\/?$/.test(location.pathname)) return <App quiet={quiet} />;
   return <SplitScreen />;

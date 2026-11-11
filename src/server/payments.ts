@@ -181,9 +181,15 @@ function dollars(cents: number): string {
 /**
  * Create the payments service.
  *
- * @param deps - The ledger, the stored payments, PayPal, and which account pays which friend.
+ * @param deps - The ledger, the stored payments, PayPal, and which account pays which friend, asked for when a payment needs one
+ *   because a judge's friends are paired with the accounts by their place on the ledger.
  */
-export function createPayments(deps: { ledger: Pick<LedgerStore, "read">; store: PaymentStore; paypal: PayPal; accounts: FriendAccounts }): Payments {
+export function createPayments(deps: {
+  ledger: Pick<LedgerStore, "read">;
+  store: PaymentStore;
+  paypal: PayPal;
+  accounts: () => Promise<FriendAccounts>;
+}): Payments {
   async function standings(visitor: VisitorId): Promise<FriendStanding[]> {
     const [ledger, totals] = await Promise.all([deps.ledger.read(), deps.store.totals(visitor)]);
     return ledger.rows.flatMap((row) => {
@@ -234,7 +240,7 @@ export function createPayments(deps: { ledger: Pick<LedgerStore, "read">; store:
       if (typeof amountCents !== "number" || !Number.isInteger(amountCents) || amountCents < 1) return err(new InvalidPayment());
       const tooHigh = within(standing.value, amountCents);
       if (tooHigh !== undefined) return err(tooHigh);
-      const email = deps.accounts.emailFor(friend);
+      const email = (await deps.accounts()).emailFor(friend);
       if (email === undefined) return err(new NoPayPalAccount(friend));
 
       const order = await deps.paypal.createOrder({ friendEmail: email, amountCents });
@@ -247,7 +253,7 @@ export function createPayments(deps: { ledger: Pick<LedgerStore, "read">; store:
       // The order is read back first: the payee decides which friend is paid, and nothing the page says does.
       const order = await deps.paypal.getOrder(orderId);
       if (order._tag === "err") return order;
-      const friend = deps.accounts.friendFor(order.value.friendEmail);
+      const friend = (await deps.accounts()).friendFor(order.value.friendEmail);
       // An order made for another visitor is not this one's to capture: it would count in the wrong copy.
       if (friend === undefined || (await deps.store.orderVisitor(orderId)) !== visitor) return err(new NotAFriendsOrder());
 
@@ -280,7 +286,7 @@ export function createPayments(deps: { ledger: Pick<LedgerStore, "read">; store:
       if (await deps.store.hasCapture(captureId)) return ok("recorded");
       const order = await deps.paypal.getOrder(orderId);
       if (order._tag === "err") return order;
-      const friend = deps.accounts.friendFor(order.value.friendEmail);
+      const friend = (await deps.accounts()).friendFor(order.value.friendEmail);
       const visitor = await deps.store.orderVisitor(orderId);
       if (friend === undefined || visitor === undefined) return ok("ignored");
       const ledger = await deps.ledger.read();

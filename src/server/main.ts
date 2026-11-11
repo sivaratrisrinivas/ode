@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { Render } from "@renderinc/sdk";
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
@@ -66,12 +67,24 @@ if (!paypalWebhookId) console.warn("PAYPAL_WEBHOOK_ID is not set; PayPal's payme
 if (!paypalClientId || !paypalClientSecret) console.warn("PAYPAL_CLIENT_ID and PAYPAL_CLIENT_SECRET are not set; paying a friend will fail.");
 const paypal: PayPal = paypalClientId && paypalClientSecret ? createPayPal({ clientId: paypalClientId, clientSecret: paypalClientSecret, env: paypalEnv, ...(paypalWebhookId ? { webhookId: paypalWebhookId } : {}) }) : unwiredPayPal;
 
+/** The built page, which a verse share's link-preview tags are put into; without a build the share page is served bare. */
+function builtIndexHtml(): string | undefined {
+  try {
+    return readFileSync("./dist/index.html", "utf8");
+  } catch {
+    console.warn("dist/index.html is not built; verse share pages will have no app to load. Run `npm run build`.");
+    return undefined;
+  }
+}
+
+const indexHtml = builtIndexHtml();
 const api = createApi({
   sql,
   ports: { clock: { now: () => new Date() }, claude, paypal },
   workflow: createWorkflow(workflowChoice.value),
   friendAccounts: accounts.value,
   paypalClientId: paypalClientSecret ? paypalClientId : undefined,
+  ...(indexHtml === undefined ? {} : { indexHtml }),
 });
 
 const app = new Hono();

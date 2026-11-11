@@ -8,12 +8,12 @@
     "node": ">=24"
   },
   "scripts": {
-    "dev:server": "node --watch src/server/main.ts",
+    "dev:server": "node --env-file-if-exists=.env --watch src/server/main.ts",
     "dev:client": "vite",
     "dev:fake": "vite build && node src/testing/dev-fake.ts",
     "prepare": "git config core.hooksPath .githooks || true",
     "build": "vite build",
-    "start": "node src/server/main.ts",
+    "start": "node --env-file-if-exists=.env src/server/main.ts",
     "typecheck": "tsc --noEmit",
     "check": "tsc --noEmit && node scripts/check-casts.ts",
     "test": "vitest run"

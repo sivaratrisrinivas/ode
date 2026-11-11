@@ -1,8 +1,9 @@
+import { readFileSync } from "node:fs";
 import { PGlite } from "@electric-sql/pglite";
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
-import { seedExtraction, seedFriendAccounts, seedLyrics } from "../../test/seed.ts";
+import { goaExtraction, lyricsForFriends, seedExtraction, seedFriendAccounts, seedLyrics } from "../../test/seed.ts";
 import { createApi } from "../server/app.ts";
 import { friendAccounts } from "../server/friend-accounts.ts";
 import { createOdeJob } from "../server/ode-job.ts";
@@ -30,8 +31,9 @@ if (process.env["FAKE_FLAGGED"] === "1") {
   if (sahiti) sahiti.lines[0] = "Sahiti screamed at the gator for ninety bucks";
 }
 const claude = fakeClaudeByTask({
-  "extract-ledger": () => seedExtraction,
-  "write-lyrics": () => written,
+  // Notes that mention Goa are a judge's own: two friends who are not the seed's.
+  "extract-ledger": (input) => (input.includes("Goa") ? goaExtraction : seedExtraction),
+  "write-lyrics": (input) => (input.includes("Meera") ? lyricsForFriends(input) : written),
   "rewrite-line": (input) => {
     const request: { line: string } = JSON.parse(input);
     return { line: request.line.replace("ninety", "fifty") };
@@ -45,9 +47,18 @@ const api = createApi({
   workflow: fakeWorkflow(createOdeJob({ sql, claude, music })),
   friendAccounts: friendAccounts(seedFriendAccounts),
   paypalClientId: undefined,
+  indexHtml: readFileSync("./dist/index.html", "utf8"),
 });
 
 const app = new Hono();
+// Dev only: the fake clock never moves by itself, so `scripts/drive-fake.mjs` moves it to pass a release date.
+app.post("/dev/clock/advance-days", async (c) => {
+  const body: unknown = await c.req.json().catch(() => undefined);
+  const days = typeof body === "object" && body !== null ? Reflect.get(body, "days") : undefined;
+  if (typeof days !== "number" || !Number.isInteger(days) || days < 0) return c.json({ error: "Send { days } as a whole number." }, 422);
+  ports.clock.advance(days * 24 * 60 * 60 * 1000);
+  return c.json({ now: ports.clock.now().toISOString() });
+});
 app.route("/", api);
 app.use("/*", serveStatic({ root: "./dist" }));
 app.get("*", serveStatic({ path: "./dist/index.html" }));

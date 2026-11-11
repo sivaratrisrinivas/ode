@@ -92,9 +92,12 @@ export function App({ quiet = false }: { quiet?: boolean }) {
   const [buildError, setBuildError] = useState<string | null>(null);
   // Bumped whenever the whole ledger is replaced, so rows restart from the server's values.
   const [version, setVersion] = useState(0);
+  // Why the visitor is looking at the Seeded Ode instead of the Ode they were making.
+  const [notice, setNotice] = useState<string | null>(null);
 
-  useEffect(() => {
-    fetch("/api/ledger")
+  /** Load the ledger of the Ode the visitor is on, and show it from the server's values. */
+  function loadLedger() {
+    return fetch("/api/ledger")
       .then((res) => (res.ok ? res.json() : Promise.reject(new Error(String(res.status)))))
       .then((ledger: Ledger) => {
         setNotes(ledger.notes);
@@ -102,7 +105,16 @@ export function App({ quiet = false }: { quiet?: boolean }) {
         setLoad({ status: "ready", ledger });
       })
       .catch(() => setLoad({ status: "error" }));
+  }
+
+  useEffect(() => {
+    void loadLedger();
   }, []);
+
+  function fellBack(message: string) {
+    setNotice(message);
+    void loadLedger();
+  }
 
   async function submitNotes() {
     if (load.status === "ready" && load.ledger.rows.length > 0 && !window.confirm("Building a new ledger replaces the current one, including your edits, the lyrics and the Ode. Continue?")) {
@@ -144,6 +156,7 @@ export function App({ quiet = false }: { quiet?: boolean }) {
   return (
     <main style={{ fontFamily: "system-ui, sans-serif", maxWidth: 640, margin: "3rem auto", padding: "0 1rem" }}>
       <h1>Ode</h1>
+      {notice !== null && <p role="status" style={{ background: "#fff4d6", padding: "0.5rem 0.75rem", borderRadius: 6 }}>{notice}</p>}
       {load.status === "loading" && <p>Loading…</p>}
       {load.status === "error" && <p>Couldn’t load your ledger. Try again in a moment.</p>}
       {load.status === "ready" && (
@@ -178,7 +191,7 @@ export function App({ quiet = false }: { quiet?: boolean }) {
             </section>
           )}
 
-          {load.ledger.rows.length > 0 && <OdeStudio key={version} quiet={quiet} />}
+          {load.ledger.rows.length > 0 && <OdeStudio key={version} quiet={quiet} onFellBack={fellBack} />}
         </>
       )}
     </main>

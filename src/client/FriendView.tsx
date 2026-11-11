@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactElement } from "react";
-import { Cassette, type ReadyOde, type Section, type VerseSection } from "./Cassette.tsx";
+import { Cassette, type ReadyOde, type Release, type Section, type VerseSection } from "./Cassette.tsx";
+import { failureMessage, UNREACHABLE } from "./messages.tsx";
 
 /** What a friend's page is told about their own money. */
 interface You {
@@ -16,12 +17,14 @@ type FriendOde =
   | { status: "none" }
   | { status: "making"; steps: { name: string; state: string }[] }
   | { status: "failed"; error: string }
-  | { status: "ready"; durationMs: number; audioUrl: string; trip: string; dropped: boolean; sections: (Exclude<Section, VerseSection> | FriendVerse)[] };
+  | { status: "ready"; durationMs: number; audioUrl: string; trip: string; dropped: boolean; release: Release | null; sections: (Exclude<Section, VerseSection> | FriendVerse)[] };
 
 /** What `GET /api/friends/:token` and each `state` event carry. */
 interface FriendViewState {
   friend: string;
   you: You | null;
+  /** The server's word that the friend has a line unlocked and so may share their verse. */
+  canShare: boolean;
   ode: FriendOde;
 }
 
@@ -38,8 +41,56 @@ function playable(ode: FriendOde): ReadyOde | null {
     audioUrl: ode.audioUrl,
     trip: ode.trip,
     dropped: ode.dropped,
+    release: ode.release,
     sections: ode.sections.map((section) => (section.kind === "verse" ? { ...section, payment: null } : section)),
   };
+}
+
+/** The share button and, once pressed, the link to post: the server makes the share from what is unlocked right now. */
+function ShareVerse({ token }: { token: string }): ReactElement {
+  const [link, setLink] = useState<string | null>(null);
+  const [problem, setProblem] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  async function share() {
+    setProblem(null);
+    setCopied(false);
+    try {
+      const res = await fetch(`/api/friends/${encodeURIComponent(token)}/share`, { method: "POST" });
+      if (!res.ok) return setProblem(await failureMessage(res));
+      const made: { sharePath: string; title: string } = await res.json();
+      const url = `${location.origin}${made.sharePath}`;
+      setLink(url);
+      // Where the device has a share sheet, offer it; the link stays on the page either way.
+      if (typeof navigator.share === "function") await navigator.share({ title: made.title, url }).catch(() => undefined);
+    } catch {
+      setProblem(UNREACHABLE);
+    }
+  }
+
+  async function copy() {
+    if (link === null) return;
+    try {
+      await navigator.clipboard.writeText(link);
+      setCopied(true);
+    } catch {
+      // Clipboard access can be refused; the link is selectable in the field.
+    }
+  }
+
+  return (
+    <section aria-label="Share your verse">
+      <button onClick={() => void share()}>Share my verse</button>
+      {problem !== null && <p role="alert" style={{ color: "#b00020" }}>{problem}</p>}
+      {link !== null && (
+        <p>
+          <input readOnly aria-label="Your share link" value={link} onFocus={(event) => event.currentTarget.select()} style={{ width: "70%" }} />{" "}
+          <button onClick={() => void copy()}>{copied ? "Copied" : "Copy link"}</button>{" "}
+          <a href={link}>Open</a>
+        </p>
+      )}
+    </section>
+  );
 }
 
 /**
@@ -94,6 +145,7 @@ export function FriendView({ token }: { token: string }): ReactElement {
           </p>
         </section>
       )}
+      {load.view.canShare && <ShareVerse token={token} />}
       {load.ode !== null ? (
         <Cassette ode={load.ode} title="The Ode" />
       ) : (

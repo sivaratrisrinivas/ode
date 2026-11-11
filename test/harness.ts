@@ -23,6 +23,9 @@ async function freshDatabase(): Promise<Sql> {
   return sql;
 }
 
+/** The request body that makes an Ode: the release date it needs, a date no test's clock reaches. */
+export const MAKE_ODE = { releaseDate: "2027-01-01" };
+
 /**
  * The test seam: the HTTP API, with in-process Postgres and fakes at the four ports and at the Workflow.
  * The fake Workflow runs the Render task's job with its own database stores, as a separate process would.

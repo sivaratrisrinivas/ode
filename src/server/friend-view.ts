@@ -1,7 +1,9 @@
+import type { OdeStatus } from "./ode-service.ts";
 import type { Section, VerseSection } from "./ode.ts";
 import type { FriendStanding } from "./payments.ts";
 import { err, ok, type Result } from "./result.ts";
 import { withChorusLock } from "./unlock.ts";
+import { canShareVerse } from "./verse-share.ts";
 
 /** The link token belongs to nobody: it was never given out, or the ledger it was made for has been replaced. */
 export class UnknownLink extends Error {
@@ -16,10 +18,10 @@ export class UnknownLink extends Error {
 /**
  * Turn a store's answer to "whose link is this" into a value.
  *
- * @param friend - The friend the token belongs to, or undefined when it belongs to nobody.
+ * @param holder - Who the token belongs to, or undefined when it belongs to nobody.
  */
-export function linkOwner(friend: string | undefined): Result<string, UnknownLink> {
-  return friend === undefined ? err(new UnknownLink()) : ok(friend);
+export function linkOwner<Holder>(holder: Holder | undefined): Result<Holder, UnknownLink> {
+  return holder === undefined ? err(new UnknownLink()) : ok(holder);
 }
 
 /** How often an open friend view looks for a change. Under a second, so an unlock reaches the view within the second. */
@@ -83,17 +85,21 @@ function friendSectionsJson(sections: readonly Section[], standings: readonly Fr
  *
  * @param friend - The friend the link belongs to.
  * @param standings - Every friend's standing; only `friend`'s reaches the result.
+ * @param status - Where the Ode stands; the friend may share their verse (and the page offers the share button) only once it is ready
+ *   and they have a line unlocked.
  * @param ode - Renders the Ode's status given how to show a ready Ode's sections.
  */
 export function friendViewJson(
   friend: string,
   standings: readonly FriendStanding[],
+  status: Pick<OdeStatus, "_tag">,
   ode: (sections: (sections: readonly Section[]) => unknown) => unknown,
 ) {
   const own = standings.find((candidate) => candidate.friend === friend);
   return {
     friend,
     you: own === undefined ? null : youJson(own),
+    canShare: status._tag === "Ready" && canShareVerse(own),
     ode: ode((sections) => friendSectionsJson(sections, standings, friend)),
   };
 }

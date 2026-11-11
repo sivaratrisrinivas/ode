@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { fakeClaudeByTask } from "../src/testing/fakes.ts";
-import { createHarness, pollUntil } from "./harness.ts";
+import { createHarness, MAKE_ODE, pollUntil } from "./harness.ts";
 import { seedExtraction, seedLyrics, seedNotes } from "./seed.ts";
 
 interface Standing {
@@ -34,7 +34,7 @@ async function ledgerHarness({ makeOde }: { makeOde: boolean }) {
   await harness.post("/api/ledger", { notes: seedNotes });
   await harness.post("/api/lyrics", {});
   if (makeOde) {
-    await harness.post("/api/ode", {});
+    await harness.post("/api/ode", MAKE_ODE);
     await pollUntil(
       async () => json<{ status: string }>(await harness.get("/api/ode")),
       (ode) => ode.status === "ready",
@@ -138,7 +138,7 @@ describe("the friend view", () => {
     const view = await viewFor(harness, THARUN);
 
     expect(view.ode.status).toBe("ready");
-    expect(view.ode.audioUrl).toBe("/api/ode/audio");
+    expect(view.ode.audioUrl).toMatch(/^\/api\/friends\/[0-9a-f]{64}\/audio$/);
     expect(view.ode.sections?.map((section) => section.kind)).toEqual(["intro", "verse", "hook", "verse", "hook", "verse", "hook", "chorus"]);
     expect(lockedLines(view, THARUN)).toEqual([true, true, true, true]);
     expect(lockedLines(view, VIKRAM)).toEqual([false, false, true, true]);
@@ -307,7 +307,7 @@ describe("the friend view", () => {
       const open = openEvents(await harness.get(`${link}/events`));
       expect((await open.next()).ode.status).toBe("none");
 
-      await harness.post("/api/ode", {});
+      await harness.post("/api/ode", MAKE_ODE);
 
       const ready = await pollUntil(
         () => open.next(5_000),

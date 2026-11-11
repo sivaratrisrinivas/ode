@@ -1,15 +1,22 @@
+import type { CapReached, Claim } from "./judge-odes.ts";
 import type { LedgerStore } from "./ledger-service.ts";
 import { lyricFriends, requireUnflagged, type LedgerNotReady, type LyricsFlagged } from "./lyrics.ts";
 import type { LyricsStore } from "./lyrics-service.ts";
 import type { Ode } from "./ode.ts";
 import type { MakingRun, OdeFailure, OdeRun, OdeStep, RunId, WorkflowRunId } from "./ode-run.ts";
 import type { Clock, OdeWorkflow, WorkflowUnavailable } from "./ports.ts";
+import { parseReleaseDate, type InvalidReleaseDate, type ReleaseDate } from "./release-date.ts";
 import { err, ok, type Result } from "./result.ts";
 
 /** What the Ode service needs from storage for the one Ode. */
 export interface OdeStore {
   /** The saved Ode; undefined until one has been made for the current ledger. */
   read(): Promise<Ode | undefined>;
+  /**
+   * The release date saved with the Ode; undefined when there is no Ode, or when it is one made before a release date was
+   * required (a row from the version before #31). It never changes.
+   */
+  releaseDate(): Promise<ReleaseDate | undefined>;
   /** The saved Ode's audio; undefined when there is no Ode. */
   readAudio(): Promise<Uint8Array | undefined>;
   /**
@@ -30,11 +37,12 @@ export interface OdeRuns {
   /** The run in progress or the one that failed; undefined when none is kept. */
   current(): Promise<OdeRun | undefined>;
   /**
-   * Record a new run at the first step, replacing a failed one.
+   * Record a new run at the first step, replacing a failed one, with the release date the payer promised, which the saved Ode
+   * keeps.
    *
    * @returns False, with nothing changed, when an Ode is already saved or a run is already in progress.
    */
-  begin(run: RunId, startedAt: Date): Promise<boolean>;
+  begin(run: RunId, startedAt: Date, releaseDate: ReleaseDate): Promise<boolean>;
   /** Record the Workflow's own ID for a run in progress. Does nothing when `run` is not in progress. */
   attach(run: RunId, workflowRun: WorkflowRunId): Promise<void>;
   /**
@@ -65,7 +73,7 @@ export class OdeAlreadyMade extends Error {
 }
 
 /** Why a run could not be started. */
-export type StartOdeError = LedgerNotReady | LyricsFlagged | OdeAlreadyMade | WorkflowUnavailable;
+export type StartOdeError = LedgerNotReady | LyricsFlagged | InvalidReleaseDate | OdeAlreadyMade | CapReached | WorkflowUnavailable;
 
 /** The run in progress. */
 export interface MakingOde {
@@ -78,16 +86,18 @@ export type OdeStatus =
   | { readonly _tag: "NotMade" }
   | MakingOde
   | { readonly _tag: "Failed"; readonly failure: OdeFailure }
-  | { readonly _tag: "Ready"; readonly ode: Ode };
+  | { readonly _tag: "Ready"; readonly ode: Ode; readonly releaseDate: ReleaseDate | undefined };
 
 /** Starts the pipeline that makes the Ode in the Workflow, and reports how far it got. */
 export interface OdeMaker {
   /**
    * Start making the Ode. A run already in progress is not started twice, by this web service process or any other.
    *
+   * @param releaseDate - The date the payer promises the whole Ode will drop, as sent: required, and it must be a real date today
+   *   or later. It is judged only once no Ode exists and no run is in progress, and it is fixed from then on.
    * @returns The status after the request: the run just started or already in progress, or why none could start.
    */
-  start(): Promise<Result<OdeStatus, StartOdeError>>;
+  start(releaseDate: unknown): Promise<Result<OdeStatus, StartOdeError>>;
   /**
    * The current status, for the payer to poll. A run the Workflow has ended without saving an Ode is recorded as lost
    * here, so a run that died never leaves the payer waiting.
@@ -112,25 +122,31 @@ const MAX_RUN_MS = 10 * 60_000;
  * Create the Ode maker. It keeps no state of its own: the run lives in the database and the Workflow, so any
  * web service process can start the run, poll it, or pick it up after a restart.
  *
- * @param deps - The clock, the ledger, the lyrics, the Ode and run stores, the Workflow, and how run IDs are chosen.
+ * @param deps - The clock, the ledger, the lyrics, the Ode and run stores, the Workflow, and how run IDs are chosen. `admit`, when
+ *   given, is asked before a new Ode starts being made (not before a retry of a failed run, which has already been admitted) and
+ *   may refuse it; the place it grants is given back when the run does not begin or the Workflow does not start it, so a
+ *   request that loses a race, or a start that fails and is tried again, costs one place in all.
  */
 export function createOdeMaker(deps: {
   clock: Clock;
   ledger: Pick<LedgerStore, "read">;
   lyrics: Pick<LyricsStore, "read">;
-  odes: Pick<OdeStore, "read">;
+  odes: Pick<OdeStore, "read" | "releaseDate">;
   runs: OdeRuns;
   workflow: OdeWorkflow;
   newRunId: () => RunId;
+  admit?: () => Promise<Result<Claim, CapReached>>;
 }): OdeMaker {
   /** The run is read before the Ode: a run saves the Ode and clears itself in one commit, so a run seen as gone already has its Ode. */
   async function observe() {
     const run = await deps.runs.current();
-    return { run, ode: await deps.odes.read() };
+    const ode = await deps.odes.read();
+    // Fixed when the Ode is saved, so reading it after the Ode cannot see a different date.
+    return { run, ode, releaseDate: ode === undefined ? undefined : await deps.odes.releaseDate() };
   }
 
-  function toStatus({ run, ode }: Awaited<ReturnType<typeof observe>>): OdeStatus {
-    if (ode !== undefined) return { _tag: "Ready", ode };
+  function toStatus({ run, ode, releaseDate }: Awaited<ReturnType<typeof observe>>): OdeStatus {
+    if (ode !== undefined) return { _tag: "Ready", ode, releaseDate };
     if (run === undefined) return { _tag: "NotMade" };
     return run._tag === "Making" ? { _tag: "Making", step: run.step } : { _tag: "Failed", failure: run.failure };
   }
@@ -165,7 +181,7 @@ export function createOdeMaker(deps: {
     return toStatus(seen);
   }
 
-  async function start(): Promise<Result<OdeStatus, StartOdeError>> {
+  async function start(releaseDate: unknown): Promise<Result<OdeStatus, StartOdeError>> {
     const friends = lyricFriends(await deps.ledger.read());
     if (friends._tag === "err") return err(friends.error);
     // An Ode already made, or a run in progress, is answered as before whatever the lyrics now say.
@@ -173,15 +189,29 @@ export function createOdeMaker(deps: {
     if (seen._tag === "Ready") return err(new OdeAlreadyMade());
     if (seen._tag === "Making") return ok(seen);
 
+    // Only now is the release date judged: an Ode or run that exists is answered whatever date this request carries.
+    const date = parseReleaseDate(releaseDate, deps.clock.now());
+    if (date._tag === "err") return err(date.error);
+
     // Saved lyrics with a flagged line are refused here. With none saved, the run writes them and checks them itself.
     const saved = await deps.lyrics.read();
     const unflagged = saved === undefined ? undefined : requireUnflagged(saved);
     if (unflagged?._tag === "err") return err(unflagged.error);
 
+    // A retry of a failed run was admitted when that run started; anything else is a new Ode, and may have to wait for tomorrow.
+    let place: Claim | undefined;
+    if (seen._tag !== "Failed" && deps.admit !== undefined) {
+      const admitted = await deps.admit();
+      if (admitted._tag === "err") return err(admitted.error);
+      place = admitted.value;
+    }
+
     // One statement checks that there is no Ode and no run in progress, and records this run, so two requests (or a
     // request and a run that is just saving) cannot both start a paid song.
     const run = deps.newRunId();
-    if (!(await deps.runs.begin(run, deps.clock.now()))) {
+    if (!(await deps.runs.begin(run, deps.clock.now(), date.value))) {
+      // Another request began the run (and was admitted for it), so this one's place is spare.
+      await place?.release();
       const current = await status();
       return current._tag === "Ready" ? err(new OdeAlreadyMade()) : ok(current);
     }
@@ -189,6 +219,8 @@ export function createOdeMaker(deps: {
     const started = await deps.workflow.start(run);
     if (started._tag === "err") {
       await deps.runs.discard(run);
+      // The discarded run is gone, so trying again is admitted afresh: this attempt's place goes back or it would be counted twice.
+      await place?.release();
       return err(started.error);
     }
     await deps.runs.attach(run, started.value);
