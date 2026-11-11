@@ -128,6 +128,17 @@ export async function migrate(sql: Sql): Promise<void> {
        visitor text not null
      )`,
   );
+  // A verse share is cut from the Ode when it is opened; this keeps only what the friend chose to put in it, under a link of its
+  // own that says nothing about the friend's private page. It cascades away with the friend when the ledger is replaced.
+  await sql.query(
+    `create table if not exists verse_shares (
+       token text primary key default replace(gen_random_uuid()::text || gen_random_uuid()::text, '-', ''),
+       friend text not null references ledger_friends (friend) on delete cascade,
+       lines_unlocked integer not null check (lines_unlocked between 1 and 4),
+       with_chorus boolean not null,
+       unique (friend, lines_unlocked, with_chorus)
+     )`,
+  );
   // Each friend's private link: two random UUIDs, 244 bits, so a link cannot be guessed. Rows that predate the column get
   // theirs here, since a volatile default is evaluated once per row.
   await sql.query(
