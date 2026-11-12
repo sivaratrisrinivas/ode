@@ -1,5 +1,20 @@
-import { useLayoutEffect, useRef, type ComponentProps, type ReactElement, type ReactNode } from "react";
+import { Component, lazy, Suspense, useLayoutEffect, useRef, useState, type ComponentProps, type ReactElement, type ReactNode } from "react";
 import { clamp01, classNames } from "./helpers.ts";
+import { sceneTier, stepDown } from "./scene/quality.ts";
+
+// three.js is most of the page's weight, so it is fetched only by a device that will draw the 3D cassette, after the page shows.
+const CassetteScene = lazy(() => import("./scene/CassetteScene.tsx"));
+
+/** Shows `fallback` in place of its children once one of them has thrown: a lost WebGL context must not take the player with it. */
+class SceneBoundary extends Component<{ fallback: ReactNode; children: ReactNode }, { failed: boolean }> {
+  override state = { failed: false };
+  static getDerivedStateFromError(): { failed: boolean } {
+    return { failed: true };
+  }
+  override render(): ReactNode {
+    return this.state.failed ? this.props.fallback : this.props.children;
+  }
+}
 
 /** The brand's mark: a small cassette, drawn in the stylesheet's colours. */
 function Mark() {
@@ -90,20 +105,56 @@ export function Reels({ progress }: { progress: number }): ReactElement {
 }
 
 /**
- * A cassette deck: the shell with its label, the reels' window and a tray under them for what plays or controls it.
+ * The cassette an Ode is heard on, with a tray under it for what plays or controls it. Where the device can draw it, the
+ * cassette is the 3D one (see `CassetteScene`); until that has loaded, and wherever it cannot be drawn, it is the flat
+ * drawing, in the same space, so the page does not jump.
  *
  * @param props - `label` what is written on the cassette; `progress` how far the song has played, 0 to 1 (see `Reels`);
- *   `playing` whether the reels turn; `children` the tray's contents.
+ *   `playing` whether the reels turn; `clarity` how much of the Ode is unlocked, 0 to 1 (the 3D window is frosted by the
+ *   rest); `flare` true while a line has just unlocked; `dropped` whether the chorus has dropped; `children` the tray's contents.
  */
-export function Deck({ label, progress, playing, children }: { label: string; progress: number; playing: boolean; children: ReactNode }): ReactElement {
-  return (
-    <div className="ode-deck" data-playing={playing ? "" : undefined}>
+export function Deck({
+  label,
+  progress,
+  playing,
+  clarity = 1,
+  flare = false,
+  dropped = false,
+  children,
+}: {
+  label: string;
+  progress: number;
+  playing: boolean;
+  clarity?: number;
+  flare?: boolean;
+  dropped?: boolean;
+  children: ReactNode;
+}): ReactElement {
+  // The tier starts from what the device says about itself and steps down if the scene measures itself slow.
+  const [tier, setTier] = useState(sceneTier);
+  const flat = (
+    <div className="ode-deck-shell">
       <div className="ode-deck-label">
         <p className="ode-deck-trip">{label}</p>
         <p className="ode-deck-side">A</p>
       </div>
       <div className="ode-deck-window">
         <Reels progress={progress} />
+      </div>
+    </div>
+  );
+  return (
+    <div className="ode-deck" data-playing={playing ? "" : undefined}>
+      <div className="ode-deck-stage">
+        {tier === null ? (
+          flat
+        ) : (
+          <SceneBoundary fallback={flat}>
+            <Suspense fallback={flat}>
+              <CassetteScene label={label} progress={progress} playing={playing} clarity={clarity} flare={flare} dropped={dropped} tier={tier} onSlow={(hopeless) => setTier(stepDown(tier, hopeless))} />
+            </Suspense>
+          </SceneBoundary>
+        )}
       </div>
       <div className="ode-deck-tray">{children}</div>
     </div>

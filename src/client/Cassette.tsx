@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactElement } from "react";
+import { useEffect, useRef, useState, type ReactElement, type ReactNode } from "react";
 import { Deck } from "./chrome.tsx";
 import { classNames } from "./helpers.ts";
 import { PayFriend, type ClientId, type Payment } from "./PayFriend.tsx";
@@ -117,16 +117,17 @@ function Row({
 }
 
 /**
- * The cassette page: play the made Ode and follow the line being sung. A locked line is blurred and its audio is
- * muffled; hooks always play clear. A line is a button that jumps to where it is sung, and each verse has the
- * controls to pay its friend. When a new Ode arrives with lines that were locked now clear, the page announces
+ * The cassette page: the cassette, the Ode's name, and one button that plays it, then the lyrics, following the line being sung. A locked line is blurred and its audio is
+ * muffled; hooks always play clear. A line is a button that jumps to where it is sung. Under the player are the controls
+ * to repay one friend at a time: the first still owed, or the one the payer picks. When a new Ode arrives with lines that were locked now clear, the page announces
  * the unlock, flares those lines and plays the first of them.
  *
  * @param props - The Ode with each line's lock, and what to do after a payment so the page shows the new locks; without
  *   `onPaid` (a friend's page) there are no controls to pay, and no verse shows a friend's link. With `quiet` an unlock is
- *   still announced and flared but not played, for a page shown beside the friend's, whose pane plays it.
+ *   still announced and flared but not played, for a page shown beside the friend's, whose pane plays it. `children` are
+ *   shown between the player and the lyrics (a friend's page puts the friend's own money there, under the cassette).
  */
-export function Cassette({ ode, onPaid, title = "Your Ode", quiet = false }: { ode: ReadyOde; onPaid?: () => void; title?: string; quiet?: boolean }): ReactElement {
+export function Cassette({ ode, onPaid, title = "Your Ode", quiet = false, children }: { ode: ReadyOde; onPaid?: () => void; title?: string; quiet?: boolean; children?: ReactNode }): ReactElement {
   const audio = useRef<HTMLAudioElement>(null);
   const filter = useRef<{ context: AudioContext; lowpass: BiquadFilterNode } | null>(null);
   const frame = useRef(0);
@@ -134,6 +135,8 @@ export function Cassette({ ode, onPaid, title = "Your Ode", quiet = false }: { o
   const [playing, setPlaying] = useState(false);
   const [clientId, setClientId] = useState<ClientId>(undefined);
   const [unlocked, setUnlocked] = useState<UnlockedLine[]>([]);
+  // The friend the payer picked to repay; null until they pick, which leaves it to the first friend still owed.
+  const [chosen, setChosen] = useState<string | null>(null);
   // Where the unlock's playback ends: the end of the last line that unlocked. Null when nothing is being previewed.
   const stopAtMs = useRef<number | null>(null);
   const shown = useRef(ode.sections);
@@ -218,41 +221,41 @@ export function Cassette({ ode, onPaid, title = "Your Ode", quiet = false }: { o
     void element.play();
   }
 
+  // One friend is repaid at a time, so the page has one thing to do: the first friend still owed, until the payer picks another.
+  const owed = ode.sections.flatMap((section) => (section.kind === "verse" && section.payment !== null ? [{ friend: section.friend, payment: section.payment }] : []));
+  const turn = owed.find((each) => each.friend === chosen) ?? owed.find((each) => each.payment.canPay) ?? owed[0];
+
+  /** The one control: play from where the song is, or pause. A line jumps to itself when pressed, so there is no bar to drag. */
+  function toggle() {
+    const element = audio.current;
+    if (element === null) return;
+    if (!element.paused) return element.pause();
+    stopAtMs.current = null;
+    void element.play();
+  }
+
+  // How much of the Ode is unlocked: each verse line and the chorus count as one part. The cassette's window clears by this much.
+  const parts = ode.sections.flatMap((section) => (section.kind === "verse" ? section.lines : section.kind === "chorus" ? [section] : []));
+  const clarity = parts.length > 0 ? parts.filter((part) => !part.locked).length / parts.length : 1;
+
   return (
     <section className="ode-cassette">
-      <div className="ode-cassette-head">
-        <h2>{title}</h2>
-        {ode.voiceLabel !== null && (
-          <p aria-label="Voice" className="ode-voice">
-            {ode.voiceLabel}
-          </p>
-        )}
-      </div>
-      {ode.dropped && (
-        <p className="ode-banner ode-banner--drop ode-unlock-banner">
-          Full Ode dropped · {ode.trip}
-        </p>
-      )}
-      {ode.release?.countdown != null && (
-        <p aria-label="Release date" className={classNames("ode-countdown", ode.release.delayed && "ode-countdown--delayed")}>
-          {ode.release.countdown}
-        </p>
-      )}
-      {unlocked.length > 0 && (
-        <div role="status" className="ode-banner ode-banner--unlock ode-unlock-banner">
-          <svg viewBox="0 0 20 20" aria-hidden="true">
-            <path d="M6 9V6.5a4 4 0 017.7-1.5" fill="none" stroke="var(--black)" strokeWidth="2.4" strokeLinecap="round" />
-            <rect x="3.5" y="9" width="13" height="9" rx="1.8" fill="var(--black)" />
-          </svg>
-          <span>
-            {unlocked[0]?.friend}: {unlocked.length === 1 ? `line ${(unlocked[0]?.line ?? 0) + 1}` : `lines ${unlocked.map((u) => u.line + 1).join(", ")}`} unlocked!
-          </span>
+      <Deck label={ode.trip} progress={ode.durationMs > 0 ? now / ode.durationMs : 0} playing={playing} clarity={clarity} flare={unlocked.length > 0} dropped={ode.dropped}>
+        <div className="ode-cassette-head">
+          <h2>{title}</h2>
+          {ode.voiceLabel !== null && (
+            <p aria-label="Voice" className="ode-voice">
+              {ode.voiceLabel}
+            </p>
+          )}
+          {ode.release?.countdown != null && (
+            <p aria-label="Release date" className={classNames("ode-countdown", ode.release.delayed && "ode-countdown--delayed")}>
+              {ode.release.countdown}
+            </p>
+          )}
         </div>
-      )}
-      <Deck label={ode.trip} progress={ode.durationMs > 0 ? now / ode.durationMs : 0} playing={playing}>
         <audio
           ref={audio}
-          controls
           preload="metadata"
           src={ode.audioUrl}
           onPlay={() => {
@@ -280,7 +283,43 @@ export function Cassette({ ode, onPaid, title = "Your Ode", quiet = false }: { o
             }
           }}
         />
+        <button className="ode-transport" aria-label={playing ? "Pause" : "Play"} onClick={toggle}>
+          <svg viewBox="0 0 20 20" aria-hidden="true">
+            {playing ? <path d="M5 3.5h3.4v13H5zM11.6 3.5H15v13h-3.4z" fill="currentColor" /> : <path d="M6 3.2v13.6l11-6.8z" fill="currentColor" />}
+          </svg>
+        </button>
       </Deck>
+      {ode.dropped && (
+        <p className="ode-banner ode-banner--drop ode-unlock-banner">
+          Full Ode dropped · {ode.trip}
+        </p>
+      )}
+      {unlocked.length > 0 && (
+        <div role="status" className="ode-banner ode-banner--unlock ode-unlock-banner">
+          <svg viewBox="0 0 20 20" aria-hidden="true">
+            <path d="M6 9V6.5a4 4 0 017.7-1.5" fill="none" stroke="var(--black)" strokeWidth="2.4" strokeLinecap="round" />
+            <rect x="3.5" y="9" width="13" height="9" rx="1.8" fill="var(--black)" />
+          </svg>
+          <span>
+            {unlocked[0]?.friend}: {unlocked.length === 1 ? `line ${(unlocked[0]?.line ?? 0) + 1}` : `lines ${unlocked.map((u) => u.line + 1).join(", ")}`} unlocked!
+          </span>
+        </div>
+      )}
+      {onPaid !== undefined && turn !== undefined && (
+        <section className="ode-repay">
+          {owed.length > 1 && (
+            <div role="group" aria-label="Friend to repay" className="ode-split-picker">
+              {owed.map((each) => (
+                <button key={each.friend} aria-pressed={each.friend === turn.friend} onClick={() => setChosen(each.friend)}>
+                  {each.friend}
+                </button>
+              ))}
+            </div>
+          )}
+          <PayFriend key={turn.friend} friend={turn.friend} payment={turn.payment} clientId={clientId} onPaid={onPaid} />
+        </section>
+      )}
+      {children}
       <div className="ode-tracks">
         {ode.sections.map((section, index) => {
           const key = `${index}:${section.kind}`;
@@ -298,7 +337,6 @@ export function Cassette({ ode, onPaid, title = "Your Ode", quiet = false }: { o
                       </p>
                     )}
                   </div>
-                  {onPaid !== undefined && section.payment !== null && <PayFriend friend={section.friend} payment={section.payment} clientId={clientId} onPaid={onPaid} />}
                   {section.lines.map((line, lineIndex) => (
                     <Row
                       key={lineIndex}

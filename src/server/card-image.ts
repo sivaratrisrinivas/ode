@@ -10,12 +10,12 @@ export const CARD_HEIGHT = 630;
  * The card is drawn without CSS, so it cannot read the tokens; `test/palette.test.ts` fails when one drifts from its token.
  */
 export const CARD_COLORS = {
-  card: "fcf9f1",
-  ink: "1e1a15",
-  tape: "ffcc2e",
-  "tape-brown": "5a3d24",
-  "paper-deep": "e8dec9",
-  coral: "e4533a",
+  card: "ffffff",
+  ink: "1c1c1c",
+  tape: "ff4f00",
+  "tape-brown": "2b2b2b",
+  "paper-deep": "e4e4e4",
+  coral: "ff4f00",
 } as const;
 
 /** The PNG's palette, in the order of the indexes below. */
