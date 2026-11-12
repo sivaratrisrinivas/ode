@@ -223,7 +223,8 @@ export function Cassette({ ode, onPaid, title = "Your Ode", quiet = false, child
 
   // One friend is repaid at a time, so the page has one thing to do: the first friend still owed, until the payer picks another.
   const owed = ode.sections.flatMap((section) => (section.kind === "verse" && section.payment !== null ? [{ friend: section.friend, payment: section.payment }] : []));
-  const turn = owed.find((each) => each.friend === chosen) ?? owed.find((each) => each.payment.canPay) ?? owed[0];
+  // Once the friend in turn is fully repaid, the turn passes to the next friend still owed, so the next thing to do is already there.
+  const turn = owed.find((each) => each.friend === chosen && each.payment.canPay) ?? owed.find((each) => each.payment.canPay) ?? owed.find((each) => each.friend === chosen) ?? owed[0];
 
   /** The one control: play from where the song is, or pause. A line jumps to itself when pressed, so there is no bar to drag. */
   function toggle() {
@@ -240,6 +241,8 @@ export function Cassette({ ode, onPaid, title = "Your Ode", quiet = false, child
 
   return (
     <section className="ode-cassette">
+      {/* On a wide screen the cassette and its controls stand beside the lyrics; this is the side that holds them. */}
+      <div className="ode-cassette-main">
       <Deck label={ode.trip} progress={ode.durationMs > 0 ? now / ode.durationMs : 0} playing={playing} clarity={clarity} flare={unlocked.length > 0} dropped={ode.dropped}>
         <div className="ode-cassette-head">
           <h2>{title}</h2>
@@ -310,7 +313,7 @@ export function Cassette({ ode, onPaid, title = "Your Ode", quiet = false, child
           {owed.length > 1 && (
             <div role="group" aria-label="Friend to repay" className="ode-split-picker">
               {owed.map((each) => (
-                <button key={each.friend} aria-pressed={each.friend === turn.friend} onClick={() => setChosen(each.friend)}>
+                <button key={each.friend} aria-pressed={each.friend === turn.friend} data-repaid={each.payment.canPay ? undefined : ""} onClick={() => setChosen(each.friend)}>
                   {each.friend}
                 </button>
               ))}
@@ -320,6 +323,7 @@ export function Cassette({ ode, onPaid, title = "Your Ode", quiet = false, child
         </section>
       )}
       {children}
+      </div>
       <div className="ode-tracks">
         {ode.sections.map((section, index) => {
           const key = `${index}:${section.kind}`;
