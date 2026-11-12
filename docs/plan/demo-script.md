@@ -5,7 +5,7 @@
 **Setup:**
 - One hard-coded payer ("me").
 - The friends are **Tharun, Vikram and Sahiti**, the real Florida friends, played by Personal PayPal sandbox accounts. On 2026-11-06 they agreed by phone to their real first names, trip details, photo and replies appearing in the public video.
-- **Seeded data:** `seed/notes.txt` is placeholder notes until the real ones arrive. From them the ledger gives Tharun $97.50, Vikram $82.50, Sahiti $77.50 (each friend's amount minus their $7.50 share of the $30 parking I covered). Re-derive every number below from the real notes.
+- **Seeded data:** `seed/notes.txt` is the final seed (change it later only if you want to). From it the ledger gives Tharun $97.50, Vikram $82.50, Sahiti $77.50 (each friend's amount minus their $7.50 share of the $30 parking I covered). Re-derive every number below if the notes change.
 
 **Rules:**
 - **Sharing:** a verse share holds only unlocked lines, and the chorus only once it has dropped. It's named after the trip and never mentions debt or amounts. The share moment belongs to the friend, who looks loved.

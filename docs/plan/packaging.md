@@ -1,6 +1,6 @@
 # Packaging: Ode
 
-Everything here is a draft. `[total]` comes from the real trip notes (the placeholder seed gives $257.50). Screenshots and footage must come from the running build. Fill in the `[brackets]` after the build and the tests. **No third-party brand names** anywhere (event rule); PayPal is fine.
+Everything here is a draft. `[total]` comes from the seed notes ($257.50; re-derive it if they change). Screenshots and footage must come from the running build. Fill in the `[brackets]` after the build and the tests. **No third-party brand names** anywhere (event rule); PayPal is fine.
 
 ## Retell line
 **Ode: a song about your trip, in your voice, where each friend's lines unlock as you pay them back.**
