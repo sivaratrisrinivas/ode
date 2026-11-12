@@ -9,7 +9,10 @@ export const CARD_HEIGHT = 630;
 const PAPER = 0;
 const INK = 1;
 const TAPE = 2;
-const PALETTE = Uint8Array.from([0xfa, 0xf7, 0xf0, 0x22, 0x22, 0x22, 0xff, 0xd6, 0x00]);
+const TAPE_BROWN = 3;
+const WINDOW = 4;
+const CORAL = 5;
+const PALETTE = Uint8Array.from([0xfa, 0xf7, 0xf0, 0x22, 0x22, 0x22, 0xff, 0xd6, 0x00, 0x5a, 0x3d, 0x24, 0xe8, 0xde, 0xc9, 0xe4, 0x53, 0x3a]);
 
 /** Space kept clear on each side of the text. */
 const MARGIN = 80;
@@ -38,6 +41,15 @@ class Canvas {
   rect(x: number, y: number, width: number, height: number, color: number): void {
     for (let row = Math.max(0, y); row < Math.min(CARD_HEIGHT, y + height); row++) {
       this.pixels.fill(color, row * CARD_WIDTH + Math.max(0, x), row * CARD_WIDTH + Math.min(CARD_WIDTH, x + width));
+    }
+  }
+
+  /** A rectangle with its corners rounded to `radius`. */
+  roundRect(x: number, y: number, width: number, height: number, radius: number, color: number): void {
+    for (let row = 0; row < height; row++) {
+      const fromEdge = Math.min(row, height - 1 - row);
+      const inset = fromEdge >= radius ? 0 : Math.ceil(radius - Math.sqrt(radius ** 2 - (radius - fromEdge - 0.5) ** 2));
+      this.rect(x + inset, y + row, width - 2 * inset, 1, color);
     }
   }
 
@@ -107,7 +119,7 @@ function encodePng(canvas: Canvas): Uint8Array {
 }
 
 /**
- * Draw the link-preview card for a verse share: the title in large letters and the trip under it, on a tape with its reels.
+ * Draw the link-preview card for a verse share: the title in large letters and the trip under it, on a cassette.
  * Text is drawn from a bitmap font, so a name with characters outside Latin-9 shows "?" for each, and a long one is cut with
  * "...". The card says nothing about money.
  *
@@ -131,11 +143,17 @@ export function renderShareCard({ headline, subline }: { headline: string; subli
   canvas.text(headlineText, centered(headlineText, headlineScale), 150, headlineScale, INK);
   canvas.text(sublineText, centered(sublineText, sublineScale), 150 + GLYPH_HEIGHT * headlineScale + 40, sublineScale, INK);
 
-  // The tape's two reels.
-  for (const cx of [CARD_WIDTH / 2 - 130, CARD_WIDTH / 2 + 130]) {
-    canvas.disc(cx, 520, 52, INK);
-    canvas.disc(cx, 520, 30, PAPER);
-    canvas.disc(cx, 520, 12, INK);
+  // The cassette: a dark shell, a label with a tape stripe, and a window with the two reels.
+  const left = (CARD_WIDTH - 520) / 2;
+  canvas.roundRect(left, 392, 520, 200, 26, INK);
+  canvas.roundRect(left + 24, 408, 472, 58, 10, PAPER);
+  canvas.rect(left + 24, 456, 472, 10, TAPE);
+  canvas.rect(left + 24, 408, 14, 10, CORAL);
+  canvas.roundRect(left + 40, 482, 440, 84, 42, WINDOW);
+  for (const cx of [CARD_WIDTH / 2 - 100, CARD_WIDTH / 2 + 100]) {
+    canvas.disc(cx, 524, 38, TAPE_BROWN);
+    canvas.disc(cx, 524, 22, PAPER);
+    canvas.disc(cx, 524, 8, INK);
   }
   return encodePng(canvas);
 }

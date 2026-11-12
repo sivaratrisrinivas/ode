@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Brand } from "./chrome.tsx";
 import { OdeStudio } from "./OdeStudio.tsx";
 import { failureMessage, UNREACHABLE, Warnings } from "./messages.tsx";
 
@@ -48,34 +49,30 @@ function Row({ row, onChange }: { row: LedgerRow; onChange: (row: LedgerRow) => 
   }
 
   return (
-    <li style={{ marginBottom: "1.25rem" }}>
-      <strong>{row.friend}</strong>
-      <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.25rem" }}>
-        <label>
-          Amount owed ($)
-          <br />
-          <input
-            inputMode="decimal"
-            value={amount}
-            placeholder="0.00"
-            onChange={(e) => setAmount(e.target.value)}
-            onBlur={saveAmount}
-            style={{ width: "7rem" }}
-          />
-        </label>
-        <label style={{ flex: 1 }}>
-          Inside joke
-          <br />
-          <input
-            value={joke}
-            onChange={(e) => setJoke(e.target.value)}
-            onBlur={saveJoke}
-            style={{ width: "100%", boxSizing: "border-box" }}
-          />
-        </label>
+    <li className="ode-ledger-row">
+      <span className="ode-avatar" aria-hidden="true">{[...row.friend][0]}</span>
+      <div className="ode-ledger-body">
+        <strong className="ode-ledger-name">{row.friend}</strong>
+        <div className="ode-ledger-fields">
+          <label>
+            Amount owed ($)
+            <input
+              className="ode-money-input"
+              inputMode="decimal"
+              value={amount}
+              placeholder="0.00"
+              onChange={(e) => setAmount(e.target.value)}
+              onBlur={saveAmount}
+            />
+          </label>
+          <label>
+            Inside joke
+            <input value={joke} onChange={(e) => setJoke(e.target.value)} onBlur={saveJoke} />
+          </label>
+        </div>
+        <Warnings messages={row.warnings} />
+        {problem !== null && <p role="alert" className="ode-problem">{problem}</p>}
       </div>
-      <Warnings messages={row.warnings} />
-      {problem !== null && <p role="alert" style={{ color: "#b00020", margin: "0.25rem 0 0" }}>{problem}</p>}
     </li>
   );
 }
@@ -94,6 +91,8 @@ export function App({ quiet = false }: { quiet?: boolean }) {
   const [version, setVersion] = useState(0);
   // Why the visitor is looking at the Seeded Ode instead of the Ode they were making.
   const [notice, setNotice] = useState<string | null>(null);
+  // Whether the Ode is made and playing: then it comes first on the page, and the notes it was made from fold away under it.
+  const [odeReady, setOdeReady] = useState(false);
 
   /** Load the ledger of the Ode the visitor is on, and show it from the server's values. */
   function loadLedger() {
@@ -153,47 +152,55 @@ export function App({ quiet = false }: { quiet?: boolean }) {
     );
   }
 
-  return (
-    <main style={{ fontFamily: "system-ui, sans-serif", maxWidth: 640, margin: "3rem auto", padding: "0 1rem" }}>
-      <h1>Ode</h1>
-      {notice !== null && <p role="status" style={{ background: "#fff4d6", padding: "0.5rem 0.75rem", borderRadius: 6 }}>{notice}</p>}
-      {load.status === "loading" && <p>Loading…</p>}
-      {load.status === "error" && <p>Couldn’t load your ledger. Try again in a moment.</p>}
-      {load.status === "ready" && (
-        <>
-          <section>
-            <label>
-              <strong>Your trip notes</strong>
-              <br />
-              <textarea
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                rows={10}
-                placeholder="Paste your notes: who covered what, and the moments you remember."
-                style={{ width: "100%", boxSizing: "border-box" }}
-              />
-            </label>
-            <button onClick={() => void submitNotes()} disabled={building || notes.trim() === ""}>
-              {building ? "Reading your notes…" : "Build the ledger"}
-            </button>
-            {buildError !== null && <p role="alert" style={{ color: "#b00020" }}>{buildError}</p>}
-          </section>
+  const setup = (
+    <details key="setup" className="ode-setup" open={!odeReady} data-ready={odeReady ? "" : undefined}>
+      <summary>Trip notes and ledger</summary>
+      <section className="ode-card ode-step">
+        <h2>Trip notes</h2>
+        <label>
+          <span className="ode-label">Your trip notes</span>
+          <textarea
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            rows={8}
+            placeholder="Paste your notes: who covered what, and the moments you remember."
+          />
+        </label>
+        <div className="ode-actions">
+          <button className="primary" onClick={() => void submitNotes()} disabled={building || notes.trim() === ""}>
+            {building ? "Reading your notes…" : "Build the ledger"}
+          </button>
+        </div>
+        {buildError !== null && <p role="alert" className="ode-problem">{buildError}</p>}
+      </section>
 
-          {(load.ledger.rows.length > 0 || load.ledger.warnings.length > 0) && (
-            <section>
-              <h2>Ledger</h2>
-              <Warnings messages={load.ledger.warnings} />
-              <ul style={{ padding: 0, listStyle: "none" }}>
-                {load.ledger.rows.map((row) => (
-                  <Row key={`${version}:${row.friend}`} row={row} onChange={replaceRow} />
-                ))}
-              </ul>
-            </section>
-          )}
-
-          {load.ledger.rows.length > 0 && <OdeStudio key={version} quiet={quiet} onFellBack={fellBack} />}
-        </>
+      {load.status === "ready" && (load.ledger.rows.length > 0 || load.ledger.warnings.length > 0) && (
+        <section className="ode-card ode-step">
+          <h2>Ledger</h2>
+          <Warnings messages={load.ledger.warnings} />
+          <ul className="ode-ledger">
+            {load.ledger.rows.map((row) => (
+              <Row key={`${version}:${row.friend}`} row={row} onChange={replaceRow} />
+            ))}
+          </ul>
+        </section>
       )}
+    </details>
+  );
+  // Keyed, so the studio keeps its state when the made Ode moves above the notes it was made from.
+  const studio = load.status === "ready" && load.ledger.rows.length > 0 && (
+    <div key="studio" className="ode-studio">
+      <OdeStudio key={version} quiet={quiet} onFellBack={fellBack} onReady={setOdeReady} />
+    </div>
+  );
+
+  return (
+    <main className="ode-page">
+      <Brand as="h1" />
+      {notice !== null && <p role="status" className="ode-notice">{notice}</p>}
+      {load.status === "loading" && <p className="ode-loading">Loading…</p>}
+      {load.status === "error" && <p>Couldn’t load your ledger. Try again in a moment.</p>}
+      {load.status === "ready" && <div className="ode-flow">{odeReady ? [studio, setup] : [setup, studio]}</div>}
     </main>
   );
 }

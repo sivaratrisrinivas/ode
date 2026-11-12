@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactElement } from "react";
 import { failureMessage, UNREACHABLE } from "./messages.tsx";
+import { Meter } from "./chrome.tsx";
 import { loadPayPalSdk } from "./paypal-sdk.ts";
 
 /** Where one friend stands, as the API tells the page. */
@@ -130,30 +131,31 @@ export function PayFriend({ friend, payment, clientId, onPaid }: { friend: strin
   }
 
   return (
-    <div style={{ margin: "0.5rem 0 0.75rem" }}>
-      <p style={{ margin: "0 0 0.25rem", fontSize: "0.9rem" }}>
+    <div className="ode-pay">
+      <p className="ode-pay-line">
         {dollars(payment.amountRepaidCents)} of {dollars(payment.amountOwedCents)} back
         {payment.nextLineAtCents !== null && <> · next line at {dollars(payment.nextLineAtCents)}</>}
       </p>
+      <Meter repaidCents={payment.amountRepaidCents} owedCents={payment.amountOwedCents} />
       {payment.canPay ? (
-        <>
+        <div className="ode-pay-row">
           <label>
             Pay {friend} ($){" "}
-            <input inputMode="decimal" value={amount} placeholder="0.00" onChange={(e) => setAmount(e.target.value)} style={{ width: "6rem" }} />
+            <input inputMode="decimal" value={amount} placeholder="0.00" onChange={(e) => setAmount(e.target.value)} />
           </label>
           {clientId === null && (
-            <button onClick={() => void payWithoutPayPal()} disabled={paying} style={{ marginLeft: "0.5rem" }}>
+            <button className="primary" onClick={() => void payWithoutPayPal()} disabled={paying}>
               {paying ? "Paying…" : `Pay ${friend}`}
             </button>
           )}
-          {clientId === undefined && <p>Loading PayPal…</p>}
-          {usesPayPal && <div ref={container} style={{ maxWidth: 260, marginTop: "0.5rem" }} />}
-        </>
+          {clientId === undefined && <span className="ode-loading">Loading PayPal…</span>}
+          {usesPayPal && <div ref={container} className="ode-pay-paypal" />}
+        </div>
       ) : (
         <button disabled>{friend} is fully repaid</button>
       )}
       {problem !== null && (
-        <p role="alert" style={{ color: "#b00020", margin: "0.25rem 0 0" }}>
+        <p role="alert" className="ode-problem">
           {problem}
         </p>
       )}

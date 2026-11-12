@@ -1,5 +1,6 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
+import "./ode.css";
 import { App } from "./App.tsx";
 import { FriendView } from "./FriendView.tsx";
 import { SharePage } from "./SharePage.tsx";
