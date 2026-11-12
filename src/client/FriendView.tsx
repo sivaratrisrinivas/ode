@@ -135,13 +135,9 @@ export function FriendView({ token }: { token: string }): ReactElement {
   }
 
   const { friend, you } = load.view;
-  return (
-    <main className="ode-page">
-      <header>
-        <Brand small />
-        <h1 className="ode-title">An Ode for {friend}</h1>
-      </header>
-      {reconnecting && <p aria-live="polite" className="ode-notice">Reconnecting…</p>}
+  // The friend's own money and the share button: under the cassette once there is one, so the song comes first.
+  const money = (
+    <>
       {you !== null && (
         <section aria-label="Your money" className="ode-card ode-money">
           <p className="ode-money-stats">
@@ -157,10 +153,24 @@ export function FriendView({ token }: { token: string }): ReactElement {
           <ShareVerse token={token} />
         </div>
       )}
+    </>
+  );
+  return (
+    <main className="ode-page">
+      <header>
+        <Brand small />
+        <h1 className="ode-title">An Ode for {friend}</h1>
+      </header>
+      {reconnecting && <p aria-live="polite" className="ode-notice">Reconnecting…</p>}
       {load.ode !== null ? (
-        <Cassette ode={load.ode} title="The Ode" />
+        <Cassette ode={load.ode} title="The Ode">
+          {money}
+        </Cassette>
       ) : (
-        <p className="ode-card">{load.view.ode.status === "making" ? "The Ode is being made…" : "The Ode isn’t ready yet."}</p>
+        <>
+          <p className="ode-card">{load.view.ode.status === "making" ? "The Ode is being made…" : "The Ode isn’t ready yet."}</p>
+          {money}
+        </>
       )}
     </main>
   );

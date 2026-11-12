@@ -40,7 +40,11 @@ One trip memory per friend that the lyrics are built around.
 
 **Ode**:
 The whole song for one trip: an intro, one verse per friend separated by hooks, and a final chorus.
-_Avoid_: Tape, track, cassette
+_Avoid_: Tape, track, cassette (the cassette is what the Ode is heard on)
+
+**Cassette**:
+The object on the page that an Ode is heard on. Its window is frosted while lines are locked and clears as they unlock, and it turns once all the way round when the chorus drops.
+_Avoid_: Player, deck, tape
 
 **Lyrics**:
 The words of the Ode: a verse per friend, a hook and a chorus. Written from the ledger, never sung with amounts, brand names or song titles.

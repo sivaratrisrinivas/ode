@@ -29,8 +29,8 @@ function friendLinks(ode: OdeAnswer): FriendLink[] {
 }
 
 /**
- * The whole arc on one page: the payer's page on the left, and on the right a friend's own view with a picker for which
- * friend. A payment made on the left unlocks the line on the right, because the right pane is that friend's live page.
+ * The landing page: the payer's page, alone at first, and on request ("Show a friend's view", or the address `/split`) a
+ * friend's own view beside it with a picker for which friend. A payment made on the left unlocks the line on the right, because the right pane is that friend's live page.
  * The left pane is told to stay quiet, so the unlock is sung once, by the friend's pane. Every payment on the page counts
  * in this browser's own copy of the Seeded Ode, and "Reset demo" puts that copy back to unpaid for a retake. "Make my own
  * Ode" swaps the Seeded Ode for a new one built from the visitor's own notes, and "Back to the Seeded Ode" swaps it back.
@@ -38,6 +38,8 @@ function friendLinks(ode: OdeAnswer): FriendLink[] {
 export function SplitScreen(): ReactElement {
   const [links, setLinks] = useState<FriendLink[]>([]);
   const [chosen, setChosen] = useState<string | null>(null);
+  // Whether the friend's side is shown. The landing page starts with the payer's side alone, one thing to look at; `/split` starts with both.
+  const [both, setBoth] = useState(() => /^\/split\/?$/.test(location.pathname));
   // Bumped by "Reset demo": both panes load again, so neither shows what was paid before the reset.
   const [copy, setCopy] = useState(0);
   const [resetting, setResetting] = useState(false);
@@ -103,7 +105,7 @@ export function SplitScreen(): ReactElement {
   const shown = links.find((link) => link.friend === chosen) ?? links[0];
 
   return (
-    <main className="ode-split">
+    <main className="ode-split" data-both={both ? "" : undefined}>
       <header className="ode-split-head">
         <div className="ode-split-brand">
           <Brand />
@@ -116,10 +118,13 @@ export function SplitScreen(): ReactElement {
               Back to the Seeded Ode
             </button>
           ) : (
-            <button className="primary" onClick={() => void judgeOde("POST")} disabled={judgeBusy}>
+            <button onClick={() => void judgeOde("POST")} disabled={judgeBusy}>
               Make my own Ode
             </button>
           )}
+          <button aria-pressed={both} onClick={() => setBoth((shown) => !shown)}>
+            {both ? "Hide the friend’s view" : "Show a friend’s view"}
+          </button>
           <button onClick={() => void resetDemo()} disabled={resetting}>
             Reset demo
           </button>
@@ -129,8 +134,10 @@ export function SplitScreen(): ReactElement {
       </header>
       <section className="ode-split-pane" aria-label="You, the payer">
         <p className="ode-split-caption">You, the payer</p>
-        <iframe key={copy} title="Payer" src="/?quiet" allow="autoplay" />
+        {/* Beside the friend's pane the payer's stays quiet, so an unlock is sung once; alone, it sings the unlock itself. */}
+        <iframe key={`${copy}:${both}`} title="Payer" src={both ? "/?quiet" : "/?pane"} allow="autoplay" />
       </section>
+      {both && (
       <section className="ode-split-pane" aria-label="A friend's view">
         <div className="ode-split-caption">
           A friend’s view
@@ -150,6 +157,7 @@ export function SplitScreen(): ReactElement {
           <iframe key={`${copy}:${shown.path}`} title="Friend view" src={shown.path} allow="autoplay" />
         )}
       </section>
+      )}
     </main>
   );
 }

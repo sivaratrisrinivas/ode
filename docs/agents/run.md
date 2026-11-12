@@ -18,6 +18,10 @@ Building a ledger over an existing one asks `window.confirm`; a fresh `dev:fake`
 
 `node scripts/drive-fake.mjs [shot.png]` drives a running `dev:fake` (`PORT`) through every screen; its header comment and the comments at each phase say what each phase asserts, so read the script, not a copy here. The fake Ode's audio is junk bytes, so nothing is audible: the script records each `play()` request and where it started instead. The unlock time it prints includes the payer's order and capture requests, so 300 to 2400 ms on a loaded machine (the API test measures from the end of the payment).
 
+## The 3D cassette
+
+The cassette on every page that plays an Ode is a 3D scene (`src/client/scene/`), loaded on demand. A device without WebGL, or with WebGL only on the processor, gets the flat cassette in the same space; so does a device the scene measures at a few frames a second. `scripts/drive-fake.mjs` runs with WebGL off (`--disable-3d-apis`) and checks the flat one, because the headless browser draws WebGL at a few frames a second and that starves the page's timers. To look at the 3D one, open the page in a real browser, or run `PORT=3000 node scripts/shot-3d.mjs <outdir>` against a `dev:fake` whose Ode is made: it sets `localStorage["ode:3d"] = "force"` and saves screenshots for a person to judge.
+
 ## What the fakes show
 
 - The verse share: once a friend has a line unlocked their page shows "Share my verse", which makes a link `/s/<token>` (no button before). `/s/<token>` is the share's page; its HTML carries the Open Graph and Twitter tags a chat app reads (`curl` it to see them), `/s/<token>/card.png` is the 1200 x 630 preview image, `/api/shares/<token>` the data and `/api/shares/<token>/audio` the clip. `dev:fake` reads `dist/index.html` once at start, so restart it after a `vite build`.

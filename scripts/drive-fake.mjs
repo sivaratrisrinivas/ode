@@ -22,7 +22,9 @@ import { launchBrowser } from "./browser.mjs";
 const port = process.env.PORT ?? "3000";
 const screenshot = process.argv[2] ?? "unlock.png";
 
-const browser = await launchBrowser(["--autoplay-policy=no-user-gesture-required"]);
+// WebGL is off: this headless browser draws it on the processor, a few frames a second, which starves the page's own timers. So
+// the driver checks the flat cassette, the one a device without a graphics card gets; scripts/shot-3d.mjs screenshots the 3D one.
+const browser = await launchBrowser(["--autoplay-policy=no-user-gesture-required", "--disable-3d-apis"]);
 const context = await browser.newContext({ viewport: { width: 900, height: 1400 } });
 const page = await context.newPage();
 // The fake Ode's audio is 256 junk bytes, so nothing can be heard; record each play() request and where it started.
@@ -37,6 +39,8 @@ await page.addInitScript(() => {
 
 // The fake clock's day, plus an offset, as the page's date input wants it: dev-fake's clock is fixed, so the driver reads it.
 const fakeNow = new Date((await (await fetch(`http://localhost:${port}/api/health`)).json()).now);
+// The payer repays one friend at a time: turn the controls to `name` before paying them.
+const turnTo = (view, name) => view.getByRole("button", { name, exact: true }).click();
 const dayIso = (offset) => new Date(fakeNow.getTime() + offset * 86_400_000).toISOString().slice(0, 10);
 
 try {
@@ -64,6 +68,15 @@ try {
   await makeButton.click();
   await page.getByText("Your Ode").waitFor({ timeout: 30_000 });
   assert.equal(await page.getByLabel("Release date").innerText(), "0 of 3 friends · 22 days to drop", "the payer's page does not show the countdown");
+  // The cassette is drawn once, in its stage: the flat one here, since WebGL is off (see the launch flags). The stage is the
+  // same height for the flat and the 3D cassette, so the page does not jump when the 3D one loads.
+  const drawn = await page.evaluate(() => ({
+    scenes: document.querySelectorAll(".ode-deck-stage .ode-scene canvas").length,
+    flats: document.querySelectorAll(".ode-deck-stage .ode-deck-shell").length,
+    stage: document.querySelector(".ode-deck-stage")?.getBoundingClientRect().height ?? 0,
+  }));
+  assert.deepEqual([drawn.scenes, drawn.flats], [0, 1], "without WebGL the cassette page does not draw exactly one flat cassette");
+  assert.ok(drawn.stage >= 250 && drawn.stage <= 520, `the cassette's stage is ${drawn.stage} px high`);
   // The made Ode comes first and the notes it was made from fold away under it, still one click from editing.
   assert.equal(await page.getByLabel("Your trip notes").isVisible(), false, "the trip notes stay open above the made Ode");
   const ahead = await page.evaluate(() => document.querySelector("section.ode-cassette")?.compareDocumentPosition(document.querySelector("details.ode-setup") ?? document.body));
@@ -84,6 +97,8 @@ try {
   assert.equal(await friend.getByLabel("Release date").innerText(), "0 of 3 friends · 22 days to drop", "the friend's page does not show the countdown");
   console.log("release date: both pages read", JSON.stringify(await friend.getByLabel("Release date").innerText()));
 
+  // One thing to do: of the three friends owed, the page offers one to pay at a time.
+  assert.equal(await page.getByRole("button", { name: /^Pay / }).count(), 1, "the payer's page does not offer exactly one friend to pay");
   await page.getByLabel(/Pay Tharun/).fill("50");
   await page.getByRole("button", { name: "Pay Tharun" }).click();
   const paidAt = Date.now();
@@ -170,6 +185,14 @@ try {
 
   // The split screen: the payer's page on the left, a friend's view on the right. The ledger was just rebuilt, so the
   // left pane makes a new Ode first.
+  // The landing page shows one side, the payer's, until the visitor asks for a friend's view.
+  await page.goto(`http://localhost:${port}/`);
+  await page.locator('iframe[title="Payer"]').waitFor();
+  assert.equal(await page.getByLabel("A friend's view").count(), 0, "the landing page shows a friend's view before it is asked for");
+  await page.getByRole("button", { name: "Show a friend’s view" }).click();
+  await page.getByLabel("A friend's view").waitFor();
+  console.log("landing: the payer's page alone; a friend's view appears when asked for");
+
   await page.goto(`http://localhost:${port}/split`);
   const left = page.frameLocator('iframe[title="Payer"]');
   const right = page.frameLocator('iframe[title="Friend view"]');
@@ -210,10 +233,12 @@ try {
     assert.equal(await pane.getByLabel("Locked chorus").count(), 1, `the ${name}'s pane does not show the chorus locked`);
   }
   for (const [friendName, amount] of [["Tharun", "47.50"], ["Vikram", "82.50"]]) {
+    await turnTo(left, friendName);
     await left.getByLabel(new RegExp(`Pay ${friendName}`)).fill(amount);
     await left.getByRole("button", { name: `Pay ${friendName}` }).click();
     await left.getByRole("button", { name: `${friendName} is fully repaid` }).waitFor();
   }
+  await turnTo(left, "Sahiti");
   await left.getByLabel(/Pay Sahiti/).fill("77.49");
   await left.getByRole("button", { name: "Pay Sahiti" }).click();
   await left.getByText("Sahiti: lines 1, 2, 3 unlocked!").waitFor();
@@ -279,7 +304,7 @@ try {
 
   const otherContext = await browser.newContext({ viewport: { width: 900, height: 1400 } });
   const other = await otherContext.newPage();
-  await other.goto(`http://localhost:${port}/`);
+  await other.goto(`http://localhost:${port}/split`);
   const otherLeft = other.frameLocator('iframe[title="Payer"]');
   const otherRight = other.frameLocator('iframe[title="Friend view"]');
   await otherLeft.getByText("Your Ode").waitFor({ timeout: 30_000 });
@@ -328,7 +353,7 @@ try {
   const releaseOn = dayIso(11 + 5);
   const judgeContext = await browser.newContext({ viewport: { width: 900, height: 1400 } });
   const judge = await judgeContext.newPage();
-  await judge.goto(`http://localhost:${port}/`);
+  await judge.goto(`http://localhost:${port}/split`);
   const judgeLeft = judge.frameLocator('iframe[title="Payer"]');
   const judgeRight = judge.frameLocator('iframe[title="Friend view"]');
   await judgeLeft.getByText("Your Ode").waitFor({ timeout: 30_000 });
