@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactElement } from "react";
 import { Cassette, type ReadyOde, type Release, type Section, type VerseSection } from "./Cassette.tsx";
+import { Brand, Meter } from "./chrome.tsx";
 import { failureMessage, UNREACHABLE } from "./messages.tsx";
 
 /** What a friend's page is told about their own money. */
@@ -80,15 +81,17 @@ function ShareVerse({ token }: { token: string }): ReactElement {
   }
 
   return (
-    <section aria-label="Share your verse">
-      <button onClick={() => void share()}>Share my verse</button>
-      {problem !== null && <p role="alert" style={{ color: "#b00020" }}>{problem}</p>}
+    <section aria-label="Share your verse" className="ode-share">
+      <div className="ode-share-row">
+        <button className="primary" onClick={() => void share()}>Share my verse</button>
+      </div>
+      {problem !== null && <p role="alert" className="ode-problem">{problem}</p>}
       {link !== null && (
-        <p>
-          <input readOnly aria-label="Your share link" value={link} onFocus={(event) => event.currentTarget.select()} style={{ width: "70%" }} />{" "}
-          <button onClick={() => void copy()}>{copied ? "Copied" : "Copy link"}</button>{" "}
+        <div className="ode-share-row">
+          <input readOnly aria-label="Your share link" value={link} onFocus={(event) => event.currentTarget.select()} />
+          <button onClick={() => void copy()}>{copied ? "Copied" : "Copy link"}</button>
           <a href={link}>Open</a>
-        </p>
+        </div>
       )}
     </section>
   );
@@ -121,36 +124,43 @@ export function FriendView({ token }: { token: string }): ReactElement {
     return () => events.close();
   }, [token]);
 
-  const main = { fontFamily: "system-ui, sans-serif", maxWidth: 640, margin: "3rem auto", padding: "0 1rem" } as const;
-
-  if (load.status === "loading") return <main style={main}><p>Loading…</p></main>;
+  if (load.status === "loading") return <main className="ode-page"><p className="ode-loading">Loading…</p></main>;
   if (load.status === "gone") {
     return (
-      <main style={main}>
-        <h1>Ode</h1>
-        <p>This link doesn’t work any more. Ask for a new one.</p>
+      <main className="ode-page">
+        <Brand as="h1" />
+        <p className="ode-card">This link doesn’t work any more. Ask for a new one.</p>
       </main>
     );
   }
 
   const { friend, you } = load.view;
   return (
-    <main style={main}>
-      <h1>An Ode for {friend}</h1>
-      {reconnecting && <p aria-live="polite">Reconnecting…</p>}
+    <main className="ode-page">
+      <header>
+        <Brand small />
+        <h1 className="ode-title">An Ode for {friend}</h1>
+      </header>
+      {reconnecting && <p aria-live="polite" className="ode-notice">Reconnecting…</p>}
       {you !== null && (
-        <section aria-label="Your money">
-          <p>
-            Owed to you: <strong>{dollars(you.amountOwedCents)}</strong> · Repaid so far: <strong>{dollars(you.amountRepaidCents)}</strong>
-            {you.nextLineAtCents !== null && <> · Next line unlocks at {dollars(you.nextLineAtCents)} repaid</>}
+        <section aria-label="Your money" className="ode-card ode-money">
+          <p className="ode-money-stats">
+            <span className="ode-stat">Owed to you: <strong>{dollars(you.amountOwedCents)}</strong></span>
+            <span className="ode-stat ode-stat--ok">Repaid so far: <strong>{dollars(you.amountRepaidCents)}</strong></span>
+            {you.nextLineAtCents !== null && <span className="ode-stat">Next line unlocks at {dollars(you.nextLineAtCents)} repaid</span>}
           </p>
+          <Meter repaidCents={you.amountRepaidCents} owedCents={you.amountOwedCents} />
         </section>
       )}
-      {load.view.canShare && <ShareVerse token={token} />}
+      {load.view.canShare && (
+        <div className="ode-card">
+          <ShareVerse token={token} />
+        </div>
+      )}
       {load.ode !== null ? (
         <Cassette ode={load.ode} title="The Ode" />
       ) : (
-        <p>{load.view.ode.status === "making" ? "The Ode is being made…" : "The Ode isn’t ready yet."}</p>
+        <p className="ode-card">{load.view.ode.status === "making" ? "The Ode is being made…" : "The Ode isn’t ready yet."}</p>
       )}
     </main>
   );

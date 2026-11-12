@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactElement } from "react";
+import { Reels } from "./chrome.tsx";
 import { PayFriend, type ClientId, type Payment } from "./PayFriend.tsx";
 
 /** One lyric line and the stretch of the song it is sung in; `locked` until the friend's repayments reach its 25% step. */
@@ -55,22 +56,6 @@ const CLEAR_HZ = 20_000;
 /** How long the unlock banner and the line's glow stay up. */
 const UNLOCK_MS = 4000;
 
-/**
- * The unlock moment, drawn loud enough to survive video compression: a full-width banner and a line that flares
- * from blurred to clear in saturated colour. Under reduced motion the banner and glow stay, without the movement.
- */
-const UNLOCK_CSS = `
-@keyframes ode-unlock-line { 0% { background: #00c853; transform: scale(1.06); box-shadow: 0 0 0 0 #00c853; } 35% { background: #00e676; transform: scale(1.06); box-shadow: 0 0 28px 10px #00e676; } 100% { background: #fff3c4; transform: scale(1); box-shadow: 0 0 0 0 #00e67600; } }
-@keyframes ode-unlock-unblur { from { filter: blur(5px); } to { filter: blur(0); } }
-@keyframes ode-unlock-banner { 0% { transform: translateY(-12px) scale(0.9); opacity: 0; } 15% { transform: translateY(0) scale(1.04); opacity: 1; } 100% { transform: translateY(0) scale(1); opacity: 1; } }
-.ode-unlock-line { animation: ode-unlock-line 2.4s ease-out both; }
-.ode-unlock-text { animation: ode-unlock-unblur 0.6s ease-out both; }
-.ode-unlock-banner { animation: ode-unlock-banner 0.5s ease-out both; }
-@media (prefers-reduced-motion: reduce) {
-  .ode-unlock-line { animation: none; background: #00e676; }
-  .ode-unlock-text, .ode-unlock-banner { animation: none; }
-}`;
-
 /** A line that has just become clear, and where it is sung. */
 interface UnlockedLine {
   friend: string;
@@ -94,6 +79,7 @@ function Row({
   label,
   text,
   span,
+  kind,
   locked = false,
   lockedLabel = "Locked line",
   fresh = false,
@@ -103,6 +89,8 @@ function Row({
   label?: string;
   text: string;
   span: { startMs: number; endMs: number };
+  /** Which part of the song this is, for how the line is drawn. */
+  kind?: "intro" | "hook" | "chorus";
   locked?: boolean;
   /** What a screen reader calls this row while it is locked. */
   lockedLabel?: string;
@@ -115,27 +103,14 @@ function Row({
   return (
     <button
       onClick={() => onPlay(span.startMs)}
-      className={fresh ? "ode-unlock-line" : undefined}
+      className={["ode-line", kind !== undefined && `ode-line--${kind}`, fresh && "ode-unlock-line"].filter(Boolean).join(" ")}
       aria-current={current}
       aria-label={locked ? lockedLabel : undefined}
       title={locked ? "Locked until the friends are paid back far enough" : undefined}
-      style={{
-        display: "block",
-        width: "100%",
-        textAlign: "left",
-        font: "inherit",
-        fontWeight: current ? 700 : 400,
-        padding: "0.25rem 0.5rem",
-        border: "none",
-        borderRadius: 4,
-        background: current ? "#fff3c4" : "transparent",
-        cursor: "pointer",
-      }}
+      data-locked={locked ? "" : undefined}
     >
-      {label !== undefined && <span style={{ color: "#555", marginRight: "0.5rem" }}>{label}</span>}
-      <span className={fresh ? "ode-unlock-text" : undefined} style={locked ? { filter: "blur(5px)", userSelect: "none" } : undefined}>
-        {text}
-      </span>
+      {label !== undefined && <span className="ode-tag">{label}</span>}
+      <span className={fresh ? "ode-line-text ode-unlock-text" : "ode-line-text"}>{text}</span>
     </button>
   );
 }
@@ -155,6 +130,7 @@ export function Cassette({ ode, onPaid, title = "Your Ode", quiet = false }: { o
   const filter = useRef<{ context: AudioContext; lowpass: BiquadFilterNode } | null>(null);
   const frame = useRef(0);
   const [now, setNow] = useState(0);
+  const [playing, setPlaying] = useState(false);
   const [clientId, setClientId] = useState<ClientId>(undefined);
   const [unlocked, setUnlocked] = useState<UnlockedLine[]>([]);
   // Where the unlock's playback ends: the end of the last line that unlocked. Null when nothing is being previewed.
@@ -242,85 +218,94 @@ export function Cassette({ ode, onPaid, title = "Your Ode", quiet = false }: { o
   }
 
   return (
-    <section>
-      <style>{UNLOCK_CSS}</style>
-      <h2>{title}</h2>
-      {ode.voiceLabel !== null && (
-        <p aria-label="Voice" style={{ margin: "-0.5rem 0 0.75rem", color: "#555", fontStyle: "italic" }}>
-          {ode.voiceLabel}
-        </p>
-      )}
+    <section className="ode-cassette">
+      <div className="ode-cassette-head">
+        <h2>{title}</h2>
+        {ode.voiceLabel !== null && (
+          <p aria-label="Voice" className="ode-voice">
+            {ode.voiceLabel}
+          </p>
+        )}
+      </div>
       {ode.dropped && (
-        <p
-          className="ode-unlock-banner"
-          style={{ background: "#ffd600", color: "#000", border: "4px solid #000", borderRadius: 12, padding: "0.75rem 1rem", margin: "0 0 0.75rem", fontSize: "1.5rem", fontWeight: 800, textAlign: "center" }}
-        >
+        <p className="ode-banner ode-banner--drop ode-unlock-banner">
           Full Ode dropped · {ode.trip}
         </p>
       )}
       {ode.release?.countdown != null && (
-        <p
-          aria-label="Release date"
-          style={{
-            margin: "0 0 0.75rem",
-            padding: "0.4rem 0.75rem",
-            borderRadius: 8,
-            fontWeight: 600,
-            background: ode.release.delayed ? "#fff0d6" : "#eef3f8",
-            border: `1px solid ${ode.release.delayed ? "#c77700" : "#9db3c8"}`,
-          }}
-        >
+        <p aria-label="Release date" className={ode.release.delayed ? "ode-countdown ode-countdown--delayed" : "ode-countdown"}>
           {ode.release.countdown}
         </p>
       )}
       {unlocked.length > 0 && (
-        <div
-          role="status"
-          className="ode-unlock-banner"
-          style={{ background: "#00c853", color: "#000", border: "4px solid #000", borderRadius: 12, padding: "0.75rem 1rem", margin: "0 0 0.75rem", fontSize: "1.5rem", fontWeight: 800, textAlign: "center" }}
-        >
-          🔓 {unlocked[0]?.friend}: {unlocked.length === 1 ? `line ${(unlocked[0]?.line ?? 0) + 1}` : `lines ${unlocked.map((u) => u.line + 1).join(", ")}`} unlocked!
+        <div role="status" className="ode-banner ode-banner--unlock ode-unlock-banner">
+          <svg viewBox="0 0 20 20" aria-hidden="true">
+            <path d="M6 9V6.5a4 4 0 017.7-1.5" fill="none" stroke="#000" strokeWidth="2.4" strokeLinecap="round" />
+            <rect x="3.5" y="9" width="13" height="9" rx="1.8" fill="#000" />
+          </svg>
+          <span>
+            {unlocked[0]?.friend}: {unlocked.length === 1 ? `line ${(unlocked[0]?.line ?? 0) + 1}` : `lines ${unlocked.map((u) => u.line + 1).join(", ")}`} unlocked!
+          </span>
         </div>
       )}
-      <div style={{ border: "2px solid #333", borderRadius: 12, padding: "1rem", background: "#faf7f0" }}>
-        <audio
-          ref={audio}
-          controls
-          preload="metadata"
-          src={ode.audioUrl}
-          onPlay={() => {
-            void lowpass()?.context.resume();
-            cancelAnimationFrame(frame.current);
-            follow();
-          }}
-          onPause={stopFollowing}
-          onEnded={stopFollowing}
-          onSeeked={muffle}
-          onTimeUpdate={(event) => {
-            const ms = event.currentTarget.currentTime * 1000;
-            setNow(ms);
-            // The unlock plays the lines it unlocked and stops, instead of running on into locked ones.
-            if (stopAtMs.current !== null && ms >= stopAtMs.current) {
-              stopAtMs.current = null;
-              event.currentTarget.pause();
-            }
-          }}
-          style={{ width: "100%" }}
-        />
+      <div className="ode-deck" data-playing={playing ? "" : undefined}>
+        <div className="ode-deck-label">
+          <p className="ode-deck-trip">{ode.trip}</p>
+          <p className="ode-deck-side">A</p>
+        </div>
+        <div className="ode-deck-window">
+          <Reels progress={ode.durationMs > 0 ? now / ode.durationMs : 0} />
+        </div>
+        <div className="ode-deck-tray">
+          <audio
+            ref={audio}
+            controls
+            preload="metadata"
+            src={ode.audioUrl}
+            onPlay={() => {
+              setPlaying(true);
+              void lowpass()?.context.resume();
+              cancelAnimationFrame(frame.current);
+              follow();
+            }}
+            onPause={() => {
+              setPlaying(false);
+              stopFollowing();
+            }}
+            onEnded={() => {
+              setPlaying(false);
+              stopFollowing();
+            }}
+            onSeeked={muffle}
+            onTimeUpdate={(event) => {
+              const ms = event.currentTarget.currentTime * 1000;
+              setNow(ms);
+              // The unlock plays the lines it unlocked and stops, instead of running on into locked ones.
+              if (stopAtMs.current !== null && ms >= stopAtMs.current) {
+                stopAtMs.current = null;
+                event.currentTarget.pause();
+              }
+            }}
+          />
+        </div>
+      </div>
+      <div className="ode-tracks">
         {ode.sections.map((section, index) => {
           const key = `${index}:${section.kind}`;
           switch (section.kind) {
             case "intro":
-              return <Row key={key} text="Intro" span={section} now={now} onPlay={play} />;
+              return <Row key={key} kind="intro" text="Intro" span={section} now={now} onPlay={play} />;
             case "verse":
               return (
-                <div key={key} style={{ marginTop: "0.75rem" }}>
-                  <strong>{section.friend}</strong>
-                  {onPaid !== undefined && section.friendViewPath !== undefined && (
-                    <p style={{ margin: "0.25rem 0" }}>
-                      <a href={section.friendViewPath}>{section.friend}’s private link</a>
-                    </p>
-                  )}
+                <div key={key} className="ode-verse">
+                  <div className="ode-verse-head">
+                    <strong className="ode-verse-name">{section.friend}</strong>
+                    {onPaid !== undefined && section.friendViewPath !== undefined && (
+                      <p className="ode-verse-link">
+                        <a href={section.friendViewPath}>{section.friend}’s private link</a>
+                      </p>
+                    )}
+                  </div>
                   {onPaid !== undefined && section.payment !== null && <PayFriend friend={section.friend} payment={section.payment} clientId={clientId} onPaid={onPaid} />}
                   {section.lines.map((line, lineIndex) => (
                     <Row
@@ -336,9 +321,9 @@ export function Cassette({ ode, onPaid, title = "Your Ode", quiet = false }: { o
                 </div>
               );
             case "hook":
-              return <Row key={key} label="Hook" text={section.text} span={section} now={now} onPlay={play} />;
+              return <Row key={key} kind="hook" label="Hook" text={section.text} span={section} now={now} onPlay={play} />;
             case "chorus":
-              return <Row key={key} label="Chorus" text={section.text} span={section} locked={section.locked} lockedLabel="Locked chorus" now={now} onPlay={play} />;
+              return <Row key={key} kind="chorus" label="Chorus" text={section.text} span={section} locked={section.locked} lockedLabel="Locked chorus" now={now} onPlay={play} />;
           }
         })}
       </div>

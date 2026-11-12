@@ -59,6 +59,16 @@ try {
   await makeButton.click();
   await page.getByText("Your Ode").waitFor({ timeout: 30_000 });
   assert.equal(await page.getByLabel("Release date").innerText(), "0 of 3 friends · 22 days to drop", "the payer's page does not show the countdown");
+  // The made Ode comes first and the notes it was made from fold away under it, still one click from editing.
+  assert.equal(await page.locator("textarea").isVisible(), false, "the trip notes stay open above the made Ode");
+  const ahead = await page.evaluate(() => document.querySelector("section.ode-cassette")?.compareDocumentPosition(document.querySelector("details.ode-setup") ?? document.body));
+  assert.ok((ahead ?? 0) & 4, "the cassette does not come before the notes and ledger");
+  await page.getByText("Trip notes and ledger").click();
+  assert.equal(await page.locator("textarea").isVisible(), true, "the folded notes do not open");
+  // Every screen fits the phone: nothing makes the page scroll sideways.
+  await page.setViewportSize({ width: 390, height: 844 });
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= 390), "the payer's page scrolls sideways at 390 px");
+  await page.setViewportSize({ width: 900, height: 1400 });
   const link = await page.getByRole("link", { name: /Tharun.s private link/ }).getAttribute("href");
   const friend = await context.newPage();
   await friend.goto(`http://localhost:${port}${link}`);
