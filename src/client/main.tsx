@@ -25,7 +25,10 @@ if (window.self !== window.top) document.documentElement.dataset.pane = "";
 function page() {
   if (shareLink?.[1] !== undefined) return <SharePage token={shareLink[1]} />;
   if (friendLink?.[1] !== undefined) return <FriendView token={friendLink[1]} />;
-  if (quiet || pane || /^\/payer\/?$/.test(location.pathname)) return <App quiet={quiet} />;
+  if (quiet || pane || /^\/payer\/?$/.test(location.pathname)) {
+    document.title = "Your Ode";
+    return <App quiet={quiet} />;
+  }
   return <SplitScreen />;
 }
 

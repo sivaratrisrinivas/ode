@@ -24,7 +24,7 @@ function parseDollars(text: string): number | undefined {
   return cents >= 1 ? cents : undefined;
 }
 
-const DID_NOT_GO_THROUGH = "Your payment didn't go through. Nothing was sent.";
+const DID_NOT_GO_THROUGH = "Your payment didn’t go through. Nothing was sent.";
 const NEEDS_AMOUNT = "Enter an amount like 50 or 47.50.";
 
 /** Create the order for `friend`; the reply's `orderId`, or the message to show the payer. */
