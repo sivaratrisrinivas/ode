@@ -24,6 +24,8 @@ Open http://localhost:3000 (`PORT` changes it). State is in memory and ends with
 - Stop it with `kill $(lsof -ti :$PORT)`. A hook blocks `pkill -f` and `pgrep -f`, which match the shell running them.
 - `npm test` takes 2 to 7 minutes: run it in the background. Every run writes its failures to `.vitest/last.json`.
 
+The reliability runs (#16) use real keys and spend credits, so they are the one thing here that does not run with fakes. `npm run reliability -- --smoke` makes one 35 s clip and stops; `npm run reliability` makes 10 clips and one full Ode from `seed/notes.txt` in in-process Postgres, and writes `notes/reliability-<date>.md` and the recorded fallback in `seed/` (see `seed/README.md`). It needs `ANTHROPIC_API_KEY` and `ELEVENLABS_API_KEY` in `.env` (or run `node --env-file=<path to .env> scripts/reliability.ts` from a worktree) and stops after 3 failures in a row. `npm run seed:ode` builds the Seeded Ode into `DATABASE_URL`'s database (on Render, from the web service's Shell).
+
 The webhook is `POST /api/payments/webhook`; under `dev:fake` it trusts a request whose `paypal-transmission-sig` header is `valid`. After a payment the page shows a green unlock banner, flares the new lines and plays the first of them.
 
 `npm run dev:server` is the real thing and needs `DATABASE_URL`, `ANTHROPIC_API_KEY` and `ELEVENLABS_API_KEY`, plus `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET` and `FRIEND_PAYPAL_ACCOUNTS` to pay friends (and `PAYPAL_WEBHOOK_ID` to trust the capture webhook) (see `.env.example`). They live in `.env` at the repo root (gitignored); `dev:server` and `start` load it, and variables already in the shell win. A git worktree has no `.env`.
