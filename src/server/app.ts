@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { Hono, type Context } from "hono";
 import { audioResponse } from "./audio-response.ts";
 import { pairedInOrder, type FriendAccounts } from "./friend-accounts.ts";
@@ -10,7 +9,7 @@ import { createLedgerStore, findLinkHolder } from "./ledger-store.ts";
 import { editLyricLine, writeLyrics, type LyricsStore, type WriteLyricsError } from "./lyrics-service.ts";
 import { createLyricsStore } from "./lyrics-store.ts";
 import { policyOf, SEEDED, type Owner, type OwnerPolicy } from "./owner.ts";
-import { ODE_STEPS, parseRunId, type OdeFailure, type OdeStep, type RunId } from "./ode-run.ts";
+import { newRunId, ODE_STEPS, type OdeFailure, type OdeStep } from "./ode-run.ts";
 import { createOdeMaker, type OdeMaker, type OdeRuns, type OdeStatus, type OdeStore, type StartOdeError } from "./ode-service.ts";
 import { createOdeStore } from "./ode-store.ts";
 import { parseWebhookEvent } from "./paypal-webhook.ts";
@@ -26,6 +25,7 @@ import { chorusDropped, releaseStatus } from "./unlock.ts";
 import { createVerseShareStore } from "./verse-share-store.ts";
 import { mountVerseShares } from "./verse-share-routes.ts";
 import { visitorMiddleware, type VisitorEnv } from "./visitor.ts";
+import { VOICE_LABELS } from "./voice.ts";
 import type { VisitorId } from "./visitor-id.ts";
 
 function field(body: unknown, name: string): unknown {
@@ -165,6 +165,7 @@ function odeJson(status: OdeStatus, finish: OdeFinish, sections: (sections: read
         status: "ready",
         durationMs: status.ode.durationMs,
         audioUrl: finish.audioUrl,
+        voiceLabel: VOICE_LABELS[status.voice],
         trip: finish.trip,
         dropped: chorusDropped(finish.standings),
         release: status.releaseDate === undefined ? null : releaseStatus(status.releaseDate, finish.now, finish.standings),
@@ -203,14 +204,6 @@ function captureFailure(error: CaptureError): { status: 402 | 422 | 502; message
       console.error(`capturing the PayPal order failed (${error._tag}):`, error);
       return { status: 502, message: "Couldn't reach PayPal just now. Try again in a moment." };
   }
-}
-
-/** A fresh run ID for each attempt to make the Ode. */
-function newRunId(): RunId {
-  const run = parseRunId(randomUUID());
-  // Defect: randomUUID always returns a lower-case UUID.
-  if (run._tag === "err") throw run.error;
-  return run.value;
 }
 
 /** Everything the API reads and writes for one Ode: the Seeded Ode's, or one judge's. */

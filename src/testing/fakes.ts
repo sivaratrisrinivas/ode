@@ -1,15 +1,20 @@
+import { MP3_BYTES_PER_SECOND } from "../server/elevenlabs.ts";
 import { createInProcessWorkflow } from "../server/in-process-workflow.ts";
 import type { ChunkPlan, WordTiming } from "../server/ode.ts";
 import type { OdeJob } from "../server/ode-job.ts";
 import type { OdeRunOutcome } from "../server/ode-pipeline.ts";
 import { parseWorkflowRunId, type RunId, type WorkflowRunId } from "../server/ode-run.ts";
 import {
+  AudioToolsUnavailable,
   MusicUnavailable,
   PayPalUnavailable,
+  VoiceUnavailable,
   WorkflowUnavailable,
+  type AudioTools,
   type Claude,
   type Clock,
   type ElevenMusic,
+  type ElevenVoice,
   type OdeWorkflow,
   type PayPal,
   type PayPalCapture,
@@ -336,6 +341,101 @@ export function fakePayPal(): FakePayPal {
     },
     async verifyWebhook({ headers }) {
       return headers["paypal-transmission-sig"] === "valid";
+    },
+  };
+}
+
+/** What the fake ElevenLabs and fake audio tools make of audio: each step's output is one byte value, so a test can tell which stored audio is which. */
+export const FAKE_VOICE_BYTES = { vocals: 1, music: 2, converted: 3, mixed: 4 } as const;
+
+/** A fake ElevenLabs with levers for the ways a real conversion goes wrong. */
+export interface FakeVoice extends ElevenVoice {
+  /** The next conversion comes back `bytes` longer than the vocals it was given, as a sung stem that ran long would. */
+  lengthenNextConversion(bytes: number): void;
+  /** The next conversion starts with `bytes` of silence before the singing, as a sung stem that began late would. */
+  delayNextConversion(bytes: number): void;
+  /** The next call of any kind fails with `VoiceUnavailable`. */
+  failNextRequest(): void;
+  /** How many times vocals were converted. */
+  conversions(): number;
+}
+
+/** A fake ElevenLabs: it splits audio into two stems as long as the audio, and converts vocals into a stem as long as they are. */
+export function fakeVoice(): FakeVoice {
+  let extra = 0;
+  let delay = 0;
+  let fail = false;
+  let converted = 0;
+  const filled = (length: number, byte: number) => new Uint8Array(length).fill(byte);
+
+  /** Fails once when asked to; otherwise runs `answer`. */
+  const unlessFailing = <T>(answer: () => T): Result<T, VoiceUnavailable> => {
+    if (!fail) return ok(answer());
+    fail = false;
+    return err(new VoiceUnavailable("fake ElevenLabs is down"));
+  };
+
+  return {
+    lengthenNextConversion(bytes) {
+      extra = bytes;
+    },
+    delayNextConversion(bytes) {
+      delay = bytes;
+    },
+    failNextRequest() {
+      fail = true;
+    },
+    conversions: () => converted,
+    async separate(audio) {
+      return unlessFailing(() => ({ vocals: filled(audio.length, FAKE_VOICE_BYTES.vocals), music: filled(audio.length, FAKE_VOICE_BYTES.music) }));
+    },
+    async convert(vocals) {
+      return unlessFailing(() => {
+        converted += 1;
+        const length = vocals.length + extra;
+        // Zero bytes are what the fake audio tools hear as silence.
+        const sung = Uint8Array.from([...new Uint8Array(delay), ...filled(length, FAKE_VOICE_BYTES.converted)]);
+        extra = 0;
+        delay = 0;
+        return sung;
+      });
+    },
+  };
+}
+
+/** Fake audio tools with a lever for ffmpeg being missing. */
+export interface FakeAudioTools extends AudioTools {
+  /** The next call of any kind fails with `AudioToolsUnavailable`, as when ffmpeg is not installed. */
+  failNextRequest(): void;
+}
+
+/** Fake audio tools: audio plays `MP3_BYTES_PER_SECOND` bytes to the second (so the fake singer's 256 bytes last 16 ms), leading zero bytes are silence, and a mix is as long as its longer stem. */
+export function fakeAudioTools(): FakeAudioTools {
+  let fail = false;
+
+  /** Fails once when asked to; otherwise runs `answer`. */
+  const unlessFailing = <T>(answer: () => T): Result<T, AudioToolsUnavailable> => {
+    if (!fail) return ok(answer());
+    fail = false;
+    return err(new AudioToolsUnavailable("fake ffmpeg is not installed"));
+  };
+  const msOf = (bytes: number) => Math.round((bytes * 1000) / MP3_BYTES_PER_SECOND);
+
+  return {
+    failNextRequest() {
+      fail = true;
+    },
+    async durationMs(audio) {
+      return unlessFailing(() => msOf(audio.length));
+    },
+    async leadingSilenceMs(audio) {
+      return unlessFailing(() => {
+        const sounding = audio.findIndex((byte) => byte !== 0);
+        return msOf(sounding === -1 ? audio.length : sounding);
+      });
+    },
+    async mix({ vocals, music }) {
+      return unlessFailing(() => new Uint8Array(Math.max(vocals.length, music.length)).fill(FAKE_VOICE_BYTES.mixed));
     },
   };
 }

@@ -66,3 +66,31 @@ describe("a database from before judges could make their own Ode", () => {
     expect((await json<{ mine: boolean }>(await asVisitor("/api/judge-ode"))).mine).toBe(false);
   });
 });
+
+describe("a database from before the Seeded Ode could be converted to the payer's voice", () => {
+  it("reads its Seeded Ode as Eleven Music's, with no voice label, once migrate adds the voice column", async () => {
+    const db = await PGlite.create();
+    const sql: Sql = { query: (text, params) => db.query(text, params), transaction: (work) => db.transaction((tx) => work(tx)) };
+    await migrate(sql);
+    await sql.query("insert into ledger (owner, notes, trip) values ('seeded', 'notes', 'Florida ''25')");
+    await sql.query(
+      "insert into ledger_friends (owner, friend, position, amount_owed_cents, amount_status, inside_joke) values ('seeded', 'Tharun', 0, 10000, 'stated', 'Drove all night')",
+    );
+    await sql.query("insert into odes (owner, audio) values ('seeded', $1)", [Uint8Array.from([1, 2, 3])]);
+    await sql.query(
+      `insert into ode_sections (owner, position, kind, friend, text, start_ms, end_ms) values
+         ('seeded', 0, 'intro', null, null, 0, 1000), ('seeded', 1, 'verse', 'Tharun', null, 1000, 5000)`,
+    );
+    for (let line = 1; line <= 4; line += 1) {
+      await sql.query("insert into ode_lines (owner, position, line_no, text, start_ms, end_ms) values ('seeded', 1, $1, 'x', $2, $3)", [line, 1000 + line * 900, 1900 + line * 900]);
+    }
+    // The table as the version before #35 left it.
+    await sql.query("alter table odes drop column voice");
+
+    await migrate(sql);
+
+    const api = createApi({ sql, ports: fakePorts(), workflow: fakeWorkflow(async () => "ready"), friendAccounts: friendAccounts(seedFriendAccounts), paypalClientId: undefined });
+    const ode = await json<{ status: string; voiceLabel: string | null }>(await api.request("/api/ode"));
+    expect(ode).toMatchObject({ status: "ready", voiceLabel: null });
+  });
+});
