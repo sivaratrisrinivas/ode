@@ -4,6 +4,7 @@ import { parseRunId, parseWorkflowRunId, type OdeFailure, type OdeRun, type OdeS
 import { ownerOfRow, type Owner } from "./owner.ts";
 import type { Sql } from "./ports.ts";
 import { parseReleaseDate } from "./release-date.ts";
+import { DEFAULT_VOICE, ODE_VOICES } from "./voice.ts";
 
 interface SectionRecord {
   position: number;
@@ -113,6 +114,22 @@ export function createOdeStore(sql: Sql, owner: Owner): OdeStore & OdeRuns {
     async readAudio() {
       const { rows } = await sql.query<{ audio: Uint8Array }>("select audio from odes where owner = $1", [owner]);
       return rows[0]?.audio;
+    },
+
+    async voice() {
+      const { rows } = await sql.query<{ voice: string }>("select voice from odes where owner = $1", [owner]);
+      const stored = rows[0]?.voice;
+      if (stored === undefined) return DEFAULT_VOICE;
+      const voice = ODE_VOICES.find((candidate) => candidate === stored);
+      // Defect: the column's check constraint allows only the listed voices.
+      if (voice === undefined) throw new Error(`corrupt odes row: voice ${stored} is not a voice`);
+      return voice;
+    },
+
+    async replaceAudio(expected, audio, voice) {
+      // One statement, conditional on the audio still being the one converted, so an Ode made again meanwhile is not overwritten.
+      const { rows } = await sql.query("update odes set audio = $3, voice = $4 where owner = $1 and audio = $2 returning owner", [owner, expected, audio, voice]);
+      return rows.length > 0;
     },
 
     async save(run, ode: Ode, audio) {

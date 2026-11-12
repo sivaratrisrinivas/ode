@@ -4,9 +4,13 @@ import { SEEDED } from "./owner.ts";
 import type { Queryable, Sql } from "./ports.ts";
 import { RELEASE_DATE_PATTERN } from "./release-date.ts";
 import { TOKEN_DEFAULT_SQL } from "./token.ts";
+import { DEFAULT_VOICE, ODE_VOICES } from "./voice.ts";
 
 /** The `OdeFailure` tags a run row may hold, as a SQL list. */
 const RUN_FAILURES = `(${ODE_FAILURE_TAGS.map((tag) => `'${tag}'`).join(", ")})`;
+
+/** The voices an Ode's audio may be sung in, as a SQL list. */
+const VOICES = `(${ODE_VOICES.map((voice) => `'${voice}'`).join(", ")})`;
 
 /** The default trip name as a SQL string literal. */
 const DEFAULT_TRIP_SQL = `'${DEFAULT_TRIP.replaceAll("'", "''")}'`;
@@ -79,9 +83,12 @@ async function createTables(sql: Queryable): Promise<void> {
     `create table if not exists odes (
        owner text primary key references ledger (owner) on delete cascade,
        audio bytea not null,
-       release_date text check (release_date ~ '${RELEASE_DATE_PATTERN}')
+       release_date text check (release_date ~ '${RELEASE_DATE_PATTERN}'),
+       voice text not null default '${DEFAULT_VOICE}' check (voice in ${VOICES})
      )`,
   );
+  // An Ode saved before the Seeded Ode could be converted to the payer's voice (#35) has no voice column; it is Eleven Music's.
+  await sql.query(`alter table odes add column if not exists voice text not null default '${DEFAULT_VOICE}' check (voice in ${VOICES})`);
   // The run making the Ode, kept here because the Workflow task and the web service are different processes and both must see
   // it. One row per owner, replaced by the next attempt. It does not cascade away with the ledger: a run still going when the
   // ledger is replaced must still be able to say it failed. A run that saves the Ode deletes its row in the same commit; a

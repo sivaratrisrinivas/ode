@@ -90,7 +90,13 @@ _Avoid_: Mini song, share card, Ode for X
 ## Demo
 
 **Seeded Ode**:
-The pre-made Ode from the real 2025 Florida trip, sung in the payer's cloned voice; every visitor gets their own unpaid copy.
+The pre-made Ode from the real 2025 Florida trip, sung in the payer's cloned voice once the one-off conversion has run (until then it has Eleven Music's vocals); every visitor gets their own unpaid copy.
+
+**Voice conversion**:
+The one-off command (`npm run seed:voice`) that splits the Seeded Ode's audio into vocals and music, sings the vocals in the payer's cloned voice, remixes them and replaces the stored audio, leaving the line windows as they were. Nothing else is converted: an Own Ode keeps Eleven Music's vocals.
+
+**Voice label**:
+What the cassette page says under the Seeded Ode's title once it is converted: "in my voice", or "a voice like mine" if the clone is not recognised. An Own Ode never has one.
 
 **Visitor copy**:
 One browser's payments against the Seeded Ode, kept under the `ode_visitor` cookie. The Ode and its audio are shared; only what has been paid is the visitor's own. "Reset demo" clears it; a missing or cleared cookie starts a new, unpaid one.

@@ -10,6 +10,8 @@
 // first friend, and goes back; once five new Odes have started that day the sixth judge is told so and stays on the Seeded Ode.
 // The release date is checked on both: the payer must pick one at "Make the Ode" (the field is required), every pane reads "N of 3 friends · D days to
 // drop", and moving the fake clock past it (dev-fake's /dev/clock/advance-days) turns it into "Delayed" with the chorus locked.
+// The voice label (#35) is checked inside the judges' section: the Seeded Ode is unlabelled until dev-fake's /dev/seed-voice runs
+// the one-off conversion, then its panes read "in my voice", while a judge's own Ode never does.
 // See docs/agents/run.md. Usage: node scripts/drive-fake.mjs [screenshot.png]
 import assert from "node:assert/strict";
 import { writeFile } from "node:fs/promises";
@@ -331,11 +333,47 @@ try {
   await page.getByRole("button", { name: "Tharun" }).waitFor();
   console.log("own Ode: the judge's Ode with Meera and Dev sits beside the Seeded Ode, which still shows Tharun, Vikram and Sahiti");
 
-  // Back to the Seeded Ode: the judge's own Ode is forgotten.
+  // The voice label (#35). Before the one-off conversion nothing is labelled: the Seeded Ode is still Eleven Music's voice.
+  const voiceLabel = (pane) => pane.getByLabel("Voice");
+  const payerPane = page.frameLocator('iframe[title="Payer"]');
+  const friendPane = page.frameLocator('iframe[title="Friend view"]');
+  await payerPane.getByText("Your Ode").waitFor({ timeout: 30_000 });
+  await friendPane.getByRole("heading", { name: /^An Ode for / }).waitFor({ timeout: 15_000 });
+  assert.equal(await voiceLabel(payerPane).count(), 0, "the Seeded Ode is labelled before it is converted");
+  assert.equal(await voiceLabel(friendPane).count(), 0, "a friend's view of the Seeded Ode is labelled before it is converted");
+
+  // The conversion runs (dev-fake's /dev/seed-voice is `npm run seed:voice` with fake ElevenLabs and ffmpeg). The open friend
+  // pane follows by itself; the payer's page shows it on reload.
+  const converted = await fetch(`http://localhost:${port}/dev/seed-voice`, { method: "POST" });
+  assert.equal(converted.status, 200, `the conversion answered ${converted.status}`);
+  const labelledAt = Date.now();
+  await voiceLabel(friendPane).waitFor({ timeout: 5000 });
+  const labelMs = Date.now() - labelledAt;
+  assert.ok(labelMs < 2500, `the friend pane took ${labelMs} ms to show the voice label`);
+  assert.equal(await voiceLabel(friendPane).innerText(), "in my voice", "the friend pane's voice label is not 'in my voice'");
+  await page.reload();
+  await page.getByRole("button", { name: "Tharun" }).waitFor();
+  await voiceLabel(page.frameLocator('iframe[title="Payer"]')).waitFor({ timeout: 15_000 });
+  assert.equal(await voiceLabel(page.frameLocator('iframe[title="Payer"]')).innerText(), "in my voice", "the Seeded Ode's page does not say 'in my voice'");
+  const again = await fetch(`http://localhost:${port}/dev/seed-voice`, { method: "POST" });
+  assert.equal(again.status, 409, "a second conversion was accepted");
+  console.log(`voice: the Seeded Ode reads "in my voice" on the payer's page and, ${labelMs} ms after the conversion, in a friend's open pane; a second conversion is refused`);
+  await page.screenshot({ path: `voice-${screenshot}`, fullPage: true });
+
+  // The judge's own Ode, made before the conversion and shown after it, is not labelled.
+  await judge.reload();
+  await judge.getByText("Your own Ode").waitFor({ timeout: 15_000 });
+  await judgeLeft.getByText("Your Ode").waitFor({ timeout: 30_000 });
+  await judgeRight.getByRole("heading", { name: "An Ode for Meera" }).waitFor({ timeout: 15_000 });
+  assert.equal(await voiceLabel(judgeLeft).count(), 0, "a judge's own Ode is labelled in the payer's voice");
+  assert.equal(await voiceLabel(judgeRight).count(), 0, "a judge's friend pane is labelled in the payer's voice");
+
+  // Back to the Seeded Ode: the judge's own Ode is forgotten, and the Seeded Ode they return to carries the label.
   await judge.getByRole("button", { name: "Back to the Seeded Ode" }).click();
   await judge.getByRole("button", { name: "Make my own Ode" }).waitFor();
   await judge.getByRole("button", { name: "Tharun" }).waitFor({ timeout: 15_000 });
-  console.log("own Ode: Back to the Seeded Ode returned the judge to Tharun, Vikram and Sahiti");
+  await voiceLabel(judgeLeft).waitFor({ timeout: 15_000 });
+  console.log("own Ode: Back to the Seeded Ode returned the judge to Tharun, Vikram and Sahiti, with the voice label; their own Ode had none");
 
   // The day's cap: four more new Odes start (through the API, each as a browser of its own), which with the judge's is five.
   // The sixth judge is told, and stays on the Seeded Ode.

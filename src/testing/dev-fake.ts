@@ -9,7 +9,8 @@ import { friendAccounts } from "../server/friend-accounts.ts";
 import { createOdeJob } from "../server/ode-job.ts";
 import type { Sql } from "../server/ports.ts";
 import { migrate } from "../server/schema.ts";
-import { fakeClaudeByTask, fakeMusic, fakePorts, fakeWorkflow } from "./fakes.ts";
+import { convertSeededVoice } from "../server/voice-conversion.ts";
+import { fakeAudioTools, fakeClaudeByTask, fakeMusic, fakePorts, fakeVoice, fakeWorkflow } from "./fakes.ts";
 
 /**
  * The whole app with no keys: the real API and built page over in-process Postgres, with the test fakes for Claude
@@ -58,6 +59,11 @@ app.post("/dev/clock/advance-days", async (c) => {
   if (typeof days !== "number" || !Number.isInteger(days) || days < 0) return c.json({ error: "Send { days } as a whole number." }, 422);
   ports.clock.advance(days * 24 * 60 * 60 * 1000);
   return c.json({ now: ports.clock.now().toISOString() });
+});
+// Dev only: the one-off command's conversion (`npm run seed:voice`) with the fake ElevenLabs and ffmpeg, so the page's label can be seen.
+app.post("/dev/seed-voice", async (c) => {
+  const converted = await convertSeededVoice({ sql, voice: fakeVoice(), audio: fakeAudioTools() });
+  return converted._tag === "ok" ? c.json(converted.value) : c.json({ error: converted.error.message }, 409);
 });
 app.route("/", api);
 app.use("/*", serveStatic({ root: "./dist" }));
