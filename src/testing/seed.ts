@@ -39,9 +39,9 @@ export { seedLyrics };
 
 /** The PayPal sandbox account each friend is paid through (`notes/day1-checks.md`). */
 export const seedFriendAccounts: Readonly<Record<string, string>> = {
-  Tharun: "tharunbandaru18@gmail.com",
-  Vikram: "vikram_vickey10@outlook.com",
-  Sahiti: "sahitishastrula1402@gmail.com",
+  Tharun: "tharun@example.com",
+  Vikram: "vikram@example.com",
+  Sahiti: "sahiti@example.com",
 };
 
 /** A judge's own trip notes: two friends who are not the seed's, so an Own Ode is told apart from the Seeded Ode. */
