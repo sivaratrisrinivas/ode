@@ -7,6 +7,7 @@ import pg from "pg";
 import { createApi } from "./app.ts";
 import { createAnthropicClaude } from "./claude.ts";
 import { createElevenMusic } from "./eleven-music.ts";
+import { configReadiness, looksLikeWebhookId } from "./config-readiness.ts";
 import { parseFriendAccounts } from "./friend-accounts.ts";
 import { createInProcessWorkflow } from "./in-process-workflow.ts";
 import { createOdeJob } from "./ode-job.ts";
@@ -64,6 +65,7 @@ const paypalEnv = process.env["PAYPAL_ENV"] ?? "sandbox";
 if (paypalEnv !== "sandbox" && paypalEnv !== "live") throw new Error(`PAYPAL_ENV must be sandbox or live, not ${paypalEnv}`);
 const paypalWebhookId = process.env["PAYPAL_WEBHOOK_ID"];
 if (!paypalWebhookId) console.warn("PAYPAL_WEBHOOK_ID is not set; PayPal's payment webhooks will be rejected and only capture responses unlock lines.");
+else if (!looksLikeWebhookId(paypalWebhookId)) console.warn("PAYPAL_WEBHOOK_ID is not a webhook id (letters and digits only; a URL is a common mix-up); PayPal's payment webhooks will be rejected.");
 if (!paypalClientId || !paypalClientSecret) console.warn("PAYPAL_CLIENT_ID and PAYPAL_CLIENT_SECRET are not set; paying a friend will fail.");
 const paypal: PayPal = paypalClientId && paypalClientSecret ? createPayPal({ clientId: paypalClientId, clientSecret: paypalClientSecret, env: paypalEnv, ...(paypalWebhookId ? { webhookId: paypalWebhookId } : {}) }) : unwiredPayPal;
 
@@ -84,6 +86,7 @@ const api = createApi({
   workflow: createWorkflow(workflowChoice.value),
   friendAccounts: accounts.value,
   paypalClientId: paypalClientSecret ? paypalClientId : undefined,
+  config: configReadiness(process.env),
   ...(indexHtml === undefined ? {} : { indexHtml }),
 });
 
