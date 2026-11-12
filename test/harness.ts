@@ -79,7 +79,7 @@ export async function createHarness(canned: { claude?: Claude; music?: ElevenMus
     };
   }
 
-  return { ...ports, workflow, ...webService(), restartWebService: webService };
+  return { ...ports, sql, workflow, ...webService(), restartWebService: webService };
 }
 
 /**

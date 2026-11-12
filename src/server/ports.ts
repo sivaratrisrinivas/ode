@@ -67,6 +67,53 @@ export interface ElevenMusic {
   compose(chunks: readonly ChunkPlan[]): Promise<Result<ComposedSong, MusicUnavailable>>;
 }
 
+/** A song split in two: the singing, and everything else. */
+export interface Stems {
+  vocals: Uint8Array;
+  music: Uint8Array;
+}
+
+/** ElevenLabs could not split or convert the audio: network, quota, a rejected file or an unreadable reply. */
+export class VoiceUnavailable extends Error {
+  /** Identifies this error in a union. */
+  readonly _tag = "VoiceUnavailable" as const;
+
+  /** @param cause - What went wrong: a network error, an HTTP error reply or a parse problem. */
+  constructor(cause: unknown) {
+    super("ElevenLabs could not convert the voice", { cause });
+  }
+}
+
+/**
+ * ElevenLabs stem separation and speech-to-speech, for the one-off conversion of the Seeded Ode into the payer's cloned
+ * voice (ADR 0002). Never used for an Ode made in the app.
+ */
+export interface ElevenVoice {
+  /** Split `audio` into its vocals and the music under them, as MP3. */
+  separate(audio: Uint8Array): Promise<Result<Stems, VoiceUnavailable>>;
+  /** Sing `vocals` in the payer's cloned voice, keeping their timing, as MP3 at 128 kbps. */
+  convert(vocals: Uint8Array): Promise<Result<Uint8Array, VoiceUnavailable>>;
+}
+
+/** The audio tools (ffmpeg) are missing or could not read or write the audio. */
+export class AudioToolsUnavailable extends Error {
+  /** Identifies this error in a union. */
+  readonly _tag = "AudioToolsUnavailable" as const;
+
+  /** @param cause - What went wrong: ffmpeg not installed, a non-zero exit or output that could not be read. */
+  constructor(cause: unknown) {
+    super("The audio tools (ffmpeg) are unavailable", { cause });
+  }
+}
+
+/** Measuring and mixing audio, which no ElevenLabs call does. */
+export interface AudioTools {
+  /** How long `audio` plays, in milliseconds, as decoded (not as a header claims). */
+  durationMs(audio: Uint8Array): Promise<Result<number, AudioToolsUnavailable>>;
+  /** Play `vocals` over `music` from the same start, as one MP3 at 128 kbps. */
+  mix(stems: Stems): Promise<Result<Uint8Array, AudioToolsUnavailable>>;
+}
+
 /** The Workflow could not be reached or did not answer as expected: network, credentials, an unknown task or an unreadable reply. */
 export class WorkflowUnavailable extends Error {
   /** Identifies this error in a union. */

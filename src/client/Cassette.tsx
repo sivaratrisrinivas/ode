@@ -39,6 +39,8 @@ export interface Release {
 export interface ReadyOde {
   durationMs: number;
   audioUrl: string;
+  /** What the server says about whose voice sings, as the page shows it ("in my voice"); null says nothing. The server owns the words. */
+  voiceLabel: string | null;
   trip: string;
   dropped: boolean;
   /** Null when the Ode was made without a release date. */
@@ -243,6 +245,11 @@ export function Cassette({ ode, onPaid, title = "Your Ode", quiet = false }: { o
     <section>
       <style>{UNLOCK_CSS}</style>
       <h2>{title}</h2>
+      {ode.voiceLabel !== null && (
+        <p aria-label="Voice" style={{ margin: "-0.5rem 0 0.75rem", color: "#555", fontStyle: "italic" }}>
+          {ode.voiceLabel}
+        </p>
+      )}
       {ode.dropped && (
         <p
           className="ode-unlock-banner"

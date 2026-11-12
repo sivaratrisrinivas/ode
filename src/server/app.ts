@@ -26,6 +26,7 @@ import { chorusDropped, releaseStatus } from "./unlock.ts";
 import { createVerseShareStore } from "./verse-share-store.ts";
 import { mountVerseShares } from "./verse-share-routes.ts";
 import { visitorMiddleware, type VisitorEnv } from "./visitor.ts";
+import { VOICE_LABELS } from "./voice.ts";
 import type { VisitorId } from "./visitor-id.ts";
 
 function field(body: unknown, name: string): unknown {
@@ -165,6 +166,7 @@ function odeJson(status: OdeStatus, finish: OdeFinish, sections: (sections: read
         status: "ready",
         durationMs: status.ode.durationMs,
         audioUrl: finish.audioUrl,
+        voiceLabel: VOICE_LABELS[status.voice],
         trip: finish.trip,
         dropped: chorusDropped(finish.standings),
         release: status.releaseDate === undefined ? null : releaseStatus(status.releaseDate, finish.now, finish.standings),

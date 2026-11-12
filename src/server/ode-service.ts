@@ -7,6 +7,7 @@ import type { MakingRun, OdeFailure, OdeRun, OdeStep, RunId, WorkflowRunId } fro
 import type { Clock, OdeWorkflow, WorkflowUnavailable } from "./ports.ts";
 import { parseReleaseDate, type InvalidReleaseDate, type ReleaseDate } from "./release-date.ts";
 import { err, ok, type Result } from "./result.ts";
+import type { OdeVoice } from "./voice.ts";
 
 /** What the Ode service needs from storage for the one Ode. */
 export interface OdeStore {
@@ -19,6 +20,15 @@ export interface OdeStore {
   releaseDate(): Promise<ReleaseDate | undefined>;
   /** The saved Ode's audio; undefined when there is no Ode. */
   readAudio(): Promise<Uint8Array | undefined>;
+  /** Whose voice sings the saved Ode's audio; Eleven Music's when there is no Ode, or it was saved before voices were recorded. */
+  voice(): Promise<OdeVoice>;
+  /**
+   * Put `audio`, sung in `voice`, in place of the saved Ode's audio, leaving its line windows and everything else as they are.
+   *
+   * @param expected - The audio being replaced, as the caller read it.
+   * @returns False, with nothing changed, when there is no Ode or its audio is no longer `expected` (the Ode was made again meanwhile).
+   */
+  replaceAudio(expected: Uint8Array, audio: Uint8Array, voice: OdeVoice): Promise<boolean>;
   /**
    * Save the Ode and its audio together, all or nothing, in place of any current Ode, and clear the run
    * in the same commit.
@@ -86,7 +96,7 @@ export type OdeStatus =
   | { readonly _tag: "NotMade" }
   | MakingOde
   | { readonly _tag: "Failed"; readonly failure: OdeFailure }
-  | { readonly _tag: "Ready"; readonly ode: Ode; readonly releaseDate: ReleaseDate | undefined };
+  | { readonly _tag: "Ready"; readonly ode: Ode; readonly releaseDate: ReleaseDate | undefined; readonly voice: OdeVoice };
 
 /** Starts the pipeline that makes the Ode in the Workflow, and reports how far it got. */
 export interface OdeMaker {
@@ -131,7 +141,7 @@ export function createOdeMaker(deps: {
   clock: Clock;
   ledger: Pick<LedgerStore, "read">;
   lyrics: Pick<LyricsStore, "read">;
-  odes: Pick<OdeStore, "read" | "releaseDate">;
+  odes: Pick<OdeStore, "read" | "releaseDate" | "voice">;
   runs: OdeRuns;
   workflow: OdeWorkflow;
   newRunId: () => RunId;
@@ -142,11 +152,12 @@ export function createOdeMaker(deps: {
     const run = await deps.runs.current();
     const ode = await deps.odes.read();
     // Fixed when the Ode is saved, so reading it after the Ode cannot see a different date.
-    return { run, ode, releaseDate: ode === undefined ? undefined : await deps.odes.releaseDate() };
+    // The voice changes at most once, for the Seeded Ode, and only labels the page, so a read between the two is harmless.
+    return { run, ode, releaseDate: ode === undefined ? undefined : await deps.odes.releaseDate(), voice: await deps.odes.voice() };
   }
 
-  function toStatus({ run, ode, releaseDate }: Awaited<ReturnType<typeof observe>>): OdeStatus {
-    if (ode !== undefined) return { _tag: "Ready", ode, releaseDate };
+  function toStatus({ run, ode, releaseDate, voice }: Awaited<ReturnType<typeof observe>>): OdeStatus {
+    if (ode !== undefined) return { _tag: "Ready", ode, releaseDate, voice };
     if (run === undefined) return { _tag: "NotMade" };
     return run._tag === "Making" ? { _tag: "Making", step: run.step } : { _tag: "Failed", failure: run.failure };
   }

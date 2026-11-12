@@ -16,6 +16,7 @@
     "start": "node --env-file-if-exists=.env src/server/main.ts",
     "typecheck": "tsc --noEmit",
     "check": "tsc --noEmit && node scripts/check-casts.ts",
+    "seed:voice": "node --env-file-if-exists=.env --env-file-if-exists=.env.seed scripts/seed-voice.ts",
     "test": "vitest run"
   },
   "dependencies": {
