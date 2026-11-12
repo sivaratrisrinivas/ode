@@ -5,7 +5,7 @@
 It includes deliberate ambiguity for the ledger step to handle:
 - Approximate amounts ("$90ish", "~105", "maybe $25").
 - An unattributed credit ("I paid parking $30, subtract from someone??").
-- A total that needs splitting ($420 Airbnb, 4 ways).
+- A total that needs splitting ($420 rental, 4 ways).
 
 Friend names match the PayPal sandbox payees in `notes/day1-checks.md`: Tharun, Vikram, Sahiti.
 

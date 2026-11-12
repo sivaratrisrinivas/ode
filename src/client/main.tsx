@@ -1,8 +1,9 @@
-import { StrictMode } from "react";
+import { StrictMode, type ReactElement, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import "./ode.css";
 import { App } from "./App.tsx";
 import { FriendView } from "./FriendView.tsx";
+import { PAYER_TITLE, ODE_TITLE, usePageTitle } from "./page-title.ts";
 import { SharePage } from "./SharePage.tsx";
 import { SplitScreen } from "./SplitScreen.tsx";
 
@@ -22,11 +23,17 @@ const shareLink = /^\/s\/([^/]+)\/?$/.exec(location.pathname);
 // A page shown inside the split screen is a pane of it: the stylesheet drops what the page around it already says.
 if (window.self !== window.top) document.documentElement.dataset.pane = "";
 
+/** A page that has no title logic of its own: it shows `title` in the tab while it is on screen. */
+function Titled({ title, children }: { title: string; children: ReactNode }): ReactElement {
+  usePageTitle(title);
+  return <>{children}</>;
+}
+
 function page() {
   if (shareLink?.[1] !== undefined) return <SharePage token={shareLink[1]} />;
   if (friendLink?.[1] !== undefined) return <FriendView token={friendLink[1]} />;
-  if (quiet || pane || /^\/payer\/?$/.test(location.pathname)) return <App quiet={quiet} />;
-  return <SplitScreen />;
+  if (quiet || pane || /^\/payer\/?$/.test(location.pathname)) return <Titled title={PAYER_TITLE}><App quiet={quiet} /></Titled>;
+  return <Titled title={ODE_TITLE}><SplitScreen /></Titled>;
 }
 
 createRoot(container).render(<StrictMode>{page()}</StrictMode>);
