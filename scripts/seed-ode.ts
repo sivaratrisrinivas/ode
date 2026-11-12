@@ -1,7 +1,8 @@
 import { readFileSync } from "node:fs";
 import pg from "pg";
 import { writeFallbackRecording } from "../src/ops/fallback-recording.ts";
-import { buildSeededOde } from "../src/ops/seed-ode.ts";
+import { readEnv } from "../src/ops/env.ts";
+import { buildSeededOde, defaultReleaseDate } from "../src/ops/seed-ode.ts";
 import { createAnthropicClaude } from "../src/server/claude.ts";
 import { createElevenMusic } from "../src/server/eleven-music.ts";
 import { createPostgresSql } from "../src/server/postgres.ts";
@@ -23,23 +24,24 @@ const replace = args.includes("--replace");
 const saveFallback = args.includes("--save-fallback");
 const releaseFlag = args.indexOf("--release");
 
-function requireEnv(name: string): string {
-  const value = process.env[name];
-  if (!value) throw new Error(`${name} is not set`);
-  return value;
+const env = readEnv(["DATABASE_URL", "ANTHROPIC_API_KEY", "ELEVENLABS_API_KEY"]);
+// The one place these commands end on a missing variable: print which, and exit non-zero before anything is spent.
+if (env._tag === "err") {
+  console.error(env.error.message);
+  process.exit(1);
 }
 
 const now = new Date();
-const releaseDate = releaseFlag === -1 ? new Date(now.getTime() + 21 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10) : (args[releaseFlag + 1] ?? "");
+const releaseDate = releaseFlag === -1 ? defaultReleaseDate(now) : (args[releaseFlag + 1] ?? "");
 
-const pool = new pg.Pool({ connectionString: requireEnv("DATABASE_URL") });
+const pool = new pg.Pool({ connectionString: env.value.DATABASE_URL });
 const sql = createPostgresSql(pool);
 try {
   await migrate(sql);
   const built = await buildSeededOde({
     sql,
-    claude: createAnthropicClaude(requireEnv("ANTHROPIC_API_KEY")),
-    music: createElevenMusic({ apiKey: requireEnv("ELEVENLABS_API_KEY") }),
+    claude: createAnthropicClaude(env.value.ANTHROPIC_API_KEY),
+    music: createElevenMusic({ apiKey: env.value.ELEVENLABS_API_KEY }),
     notes: readFileSync(new URL("../seed/notes.txt", import.meta.url), "utf8"),
     now,
     releaseDate,

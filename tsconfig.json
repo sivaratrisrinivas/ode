@@ -16,5 +16,5 @@
     "noEmit": true,
     "skipLibCheck": true
   },
-  "include": ["src", "test", "scripts/seed-voice.ts", "vite.config.ts", "vitest.config.ts"]
+  "include": ["src", "test", "scripts/reliability.ts", "scripts/seed-ode.ts", "scripts/seed-voice.ts", "vite.config.ts", "vitest.config.ts"]
 }

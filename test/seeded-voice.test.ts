@@ -77,13 +77,37 @@ describe("a conversion that cannot be trusted", () => {
     const harness = await seededHarness();
     const before = await audioOf(harness);
     const voice = fakeVoice();
-    voice.lengthenNextConversion(100);
+    voice.lengthenNextConversion(5_000);
 
     const converted = await convertSeededVoice({ sql: harness.sql, voice, audio: fakeAudioTools() });
 
     expect(converted).toMatchObject({ _tag: "err", error: { _tag: "LengthChanged" } });
     expect(await audioOf(harness)).toEqual(before);
     expect((await readyOde(harness)).voiceLabel).toBeNull();
+  });
+
+  it("is refused, and the audio kept, when the singing starts later than it did", async () => {
+    const harness = await seededHarness();
+    const before = await audioOf(harness);
+    const voice = fakeVoice();
+    // Half a second of silence ahead of the singing at the real MP3 rate: every line window would be half a second early.
+    voice.delayNextConversion(8_000);
+
+    const converted = await convertSeededVoice({ sql: harness.sql, voice, audio: fakeAudioTools() });
+
+    expect(converted).toMatchObject({ _tag: "err", error: { _tag: "VocalsMoved" } });
+    expect(await audioOf(harness)).toEqual(before);
+    expect((await readyOde(harness)).voiceLabel).toBeNull();
+  });
+
+  it("is accepted when the singing starts a hair later", async () => {
+    const harness = await seededHarness();
+    const voice = fakeVoice();
+    voice.delayNextConversion(100);
+
+    const converted = await convertSeededVoice({ sql: harness.sql, voice, audio: fakeAudioTools() });
+
+    expect(converted._tag).toBe("ok");
   });
 
   it("is accepted when the remix is only a hair longer", async () => {

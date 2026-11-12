@@ -4,8 +4,9 @@ import { join } from "node:path";
 import { PGlite } from "@electric-sql/pglite";
 import { describe, expect, it } from "vitest";
 import { writeFallbackRecording } from "../src/ops/fallback-recording.ts";
-import { buildSeededOde } from "../src/ops/seed-ode.ts";
-import { clipPlan, decide, readElevenCredits, renderReport, runClip, type RunRecord } from "../src/ops/reliability.ts";
+import { buildSeededOde, defaultReleaseDate } from "../src/ops/seed-ode.ts";
+import { clipLineWindows, clipPlan, decide, readElevenCredits, renderReport, runClip, type RunRecord } from "../src/ops/reliability.ts";
+import { MP3_BYTES_PER_SECOND } from "../src/server/elevenlabs.ts";
 import { createOdeStore } from "../src/server/ode-store.ts";
 import { SEEDED } from "../src/server/owner.ts";
 import { migrate } from "../src/server/schema.ts";
@@ -47,8 +48,8 @@ describe("reading the ElevenLabs credit balance", () => {
   });
 });
 
-/** An MP3 at the 128 kbps the app asks for, `seconds` long: 16,000 bytes a second. */
-const mp3Seconds = (seconds: number) => new Uint8Array(seconds * 16_000);
+/** An MP3 at the bitrate the app asks for, `seconds` long. */
+const mp3Seconds = (seconds: number) => new Uint8Array(seconds * MP3_BYTES_PER_SECOND);
 
 describe("one 35-second clip run", () => {
   const plan = clipPlan(seedLyrics.friends[0]?.lines ?? [], seedLyrics.hook);
@@ -73,6 +74,15 @@ describe("one 35-second clip run", () => {
     const run = await runClip(music, plan);
 
     expect(run._tag === "err" && run.error._tag).toBe("MusicUnavailable");
+  });
+
+  it("hands back the sung words, so the clip's line windows can be checked", async () => {
+    const words = [{ text: "Tharun", startMs: 6_100, endMs: 6_400 }];
+    const music: ElevenMusic = { compose: async () => ok({ audio: mp3Seconds(35), words }) };
+
+    const run = await runClip(music, plan);
+
+    expect(run._tag === "ok" && run.value.words).toEqual(words);
   });
 
   it("fails as ClipWrongLength when the audio is far from 35 s, which would break every verse window", async () => {
@@ -139,13 +149,38 @@ describe("building the Seeded Ode from the seed notes", () => {
   });
 });
 
-const clip = (n: number, outcome: { tag: string } | undefined = undefined): RunRecord =>
+const clip = (n: number, outcome: { tag: "MusicUnavailable" | "ClipWrongLength" } | undefined = undefined): RunRecord =>
   outcome === undefined
-    ? { kind: "clip", label: `clip ${n}`, ok: true, seconds: 8.5, credits: 600 }
+    ? { kind: "clip", label: `clip ${n}`, ok: true, seconds: 8.5, credits: 600, lineWindows: "aligned" }
     : { kind: "clip", label: `clip ${n}`, ok: false, tag: outcome.tag, seconds: 3, credits: 0 };
 const full = (ok: boolean): RunRecord =>
   ok ? { kind: "full", label: "full Ode", ok: true, seconds: 41, credits: 1900 } : { kind: "full", label: "full Ode", ok: false, tag: "MusicUnavailable", seconds: 20, credits: 0 };
 const clips = (failures: number) => Array.from({ length: 10 }, (_, i) => (i < failures ? clip(i + 1, { tag: "MusicUnavailable" }) : clip(i + 1)));
+
+describe("the clip's line windows", () => {
+  const lines = seedLyrics.friends[0]?.lines ?? [];
+  const plan = clipPlan(lines, seedLyrics.hook);
+  /** Every word of the four lines, sung one after another from 6 s on, as Eleven Music's timestamps would give them. */
+  const sung = lines.flatMap((line, index) => line.split(/\s+/).map((text, at) => ({ text, startMs: 6_000 + index * 5_000 + at * 400, endMs: 6_000 + index * 5_000 + at * 400 + 300 })));
+
+  it("are aligned when the sung words came back and match the lines", () => {
+    expect(clipLineWindows(plan, lines, sung)).toBe("aligned");
+  });
+
+  it("fall back to equal quarters when no word timestamps came back", () => {
+    expect(clipLineWindows(plan, lines, [])).toBe("equal-quarter fallback");
+  });
+
+  it("fall back to equal quarters when the sung words are not the lines", () => {
+    expect(clipLineWindows(plan, lines, sung.map((word) => ({ ...word, text: "la" })))).toBe("equal-quarter fallback");
+  });
+});
+
+describe("the Seeded Ode's default release date", () => {
+  it("is 21 days after now, as YYYY-MM-DD in UTC", () => {
+    expect(defaultReleaseDate(new Date("2026-11-12T23:30:00Z"))).toBe("2026-12-03");
+  });
+});
 
 describe("the reliability decision", () => {
   it("keeps the live Ode when at most 1 of the 11 runs fails", () => {
@@ -160,6 +195,10 @@ describe("the reliability decision", () => {
   it("uses the labeled fallback when the full run fails, however well the clips did", () => {
     expect(decide([...clips(0), full(false)])).toBe("fallback");
   });
+
+  it("does not decide the live Ode when there are no runs at all", () => {
+    expect(decide([])).toBe("fallback");
+  });
 });
 
 describe("the reliability report", () => {
@@ -171,10 +210,18 @@ describe("the reliability report", () => {
     claude: { inputTokens: 3_000, outputTokens: 1_200, calls: 4 },
   });
 
-  it("lists every run with its result, failure tag, seconds and credits", () => {
-    expect(report).toContain("| clip 1 | failed | MusicUnavailable | 3.0 | 0 |");
-    expect(report).toContain("| clip 3 | ok |  | 8.5 | 600 |");
-    expect(report).toContain("| full Ode | ok |  | 41.0 | 1900 |");
+  it("lists every run with its result, failure tag, seconds, credits and line windows", () => {
+    expect(report).toContain("| clip 1 | failed | MusicUnavailable | 3.0 | 0 | - |");
+    expect(report).toContain("| clip 3 | ok |  | 8.5 | 600 | aligned |");
+    expect(report).toContain("| full Ode | ok |  | 41.0 | 1900 | - |");
+  });
+
+  it("says no runs were made, with no NaN, and decides the fallback, when there are none", () => {
+    const empty = renderReport({ date: "2026-11-11", records: [], creditsBefore: undefined, creditsAfter: undefined, claude: { calls: 0, inputTokens: 0, outputTokens: 0 } });
+
+    expect(empty).toContain("Failure rate: no runs were made");
+    expect(empty).not.toContain("NaN");
+    expect(empty).toContain("Decision: use the labeled fallback in the video (no runs were made");
   });
 
   it("states the failure rate, the ElevenLabs balance before and after, and Claude's tokens", () => {

@@ -10,11 +10,18 @@ import { err, ok, type Result } from "./result.ts";
  */
 export const MAX_LENGTH_CHANGE_MS = 250;
 
+/**
+ * How far the sung vocals' first sound may move in conversion. Length alone would pass a remix whose singing started late and
+ * ended early by the same amount; every line window would be off by that much while the song's length was right.
+ */
+export const MAX_ONSET_SHIFT_MS = 250;
+
 /** There is no Seeded Ode to convert: it has not been made. */
 export class NoSeededOde extends Error {
   /** Identifies this error in a union. */
   readonly _tag = "NoSeededOde" as const;
 
+  /** Says what to do first: make the Seeded Ode on the page. */
   constructor() {
     super("The Seeded Ode is not made yet. Make it on the page first, then run this again.");
   }
@@ -25,6 +32,7 @@ export class AlreadyInPayersVoice extends Error {
   /** Identifies this error in a union. */
   readonly _tag = "AlreadyInPayersVoice" as const;
 
+  /** Says how to redo it: make the Seeded Ode again, then run once more. */
   constructor() {
     super("The Seeded Ode is already in the payer's voice. To redo it, make the Seeded Ode again (build its ledger over) and run this once more.");
   }
@@ -35,13 +43,15 @@ export class LengthChanged extends Error {
   /** Identifies this error in a union. */
   readonly _tag = "LengthChanged" as const;
 
+  /** How long the Seeded Ode's audio plays now, in ms. */
+  readonly originalMs: number;
+  /** How long the converted remix plays, in ms. */
+  readonly convertedMs: number;
+
   /**
    * @param originalMs - How long the Seeded Ode's audio plays now.
    * @param convertedMs - How long the converted remix plays.
    */
-  readonly originalMs: number;
-  readonly convertedMs: number;
-
   constructor(originalMs: number, convertedMs: number) {
     super(
       `The converted audio is ${convertedMs} ms long, the original ${originalMs} ms: more than ${MAX_LENGTH_CHANGE_MS} ms apart, so the line windows would not match. Nothing was replaced; try again, or keep Eleven Music's vocals.`,
@@ -51,18 +61,35 @@ export class LengthChanged extends Error {
   }
 }
 
+/** The sung vocals start sounding at a different time than the original's did, so the line windows would be off by that much. Nothing was replaced. */
+export class VocalsMoved extends Error {
+  /** Identifies this error in a union. */
+  readonly _tag = "VocalsMoved" as const;
+
+  /**
+   * @param originalMs - How long the original vocals stem is silent before its first sound.
+   * @param convertedMs - How long the converted vocals are silent before their first sound.
+   */
+  constructor(originalMs: number, convertedMs: number) {
+    super(
+      `The converted vocals first sound at ${convertedMs} ms, the original's at ${originalMs} ms: more than ${MAX_ONSET_SHIFT_MS} ms apart, so the line windows would not match. Nothing was replaced; try again, or keep Eleven Music's vocals.`,
+    );
+  }
+}
+
 /** The Seeded Ode was made again while it was being converted, so the conversion belongs to audio that is gone. Nothing was replaced. */
 export class OdeChanged extends Error {
   /** Identifies this error in a union. */
   readonly _tag = "OdeChanged" as const;
 
+  /** Says to run the conversion again. */
   constructor() {
     super("The Seeded Ode was made again while it was being converted. Nothing was replaced; run this again.");
   }
 }
 
 /** Why the Seeded Ode was not converted. */
-export type ConvertVoiceError = NoSeededOde | AlreadyInPayersVoice | VoiceUnavailable | AudioToolsUnavailable | LengthChanged | OdeChanged;
+export type ConvertVoiceError = NoSeededOde | AlreadyInPayersVoice | VoiceUnavailable | AudioToolsUnavailable | LengthChanged | VocalsMoved | OdeChanged;
 
 /** What a conversion that replaced the audio measured. */
 export interface VoiceConversion {
@@ -74,13 +101,14 @@ export interface VoiceConversion {
 
 /**
  * Convert the Seeded Ode's audio into the payer's cloned voice and replace it (ADR 0002): split it into vocals and music,
- * sing the vocals in the cloned voice, mix them back over the music, check the result is as long as the original and store it.
- * The Ode's line windows are untouched, which is only right while the length is, so a remix whose length moved is refused.
+ * sing the vocals in the cloned voice, check the singing still starts where it did, mix them back over the music (kept from
+ * clipping), check the result is as long as the original and store it. The Ode's line windows are untouched, which is only right
+ * while the singing sits where it did, so a conversion whose vocals start elsewhere, or whose length moved, is refused.
  * No other owner's Ode is read or written.
  *
  * @param deps - The database, ElevenLabs (already holding the payer's voice ID) and the audio tools.
  * @returns What was measured; or why nothing was replaced: no Seeded Ode, already converted, a service failing, a length that
- *   moved, or the Ode being made again meanwhile. Every failure leaves the stored audio exactly as it was.
+ *   moved, vocals that start elsewhere, or the Ode being made again meanwhile. Every failure leaves the stored audio exactly as it was.
  */
 export async function convertSeededVoice(deps: { sql: Sql; voice: ElevenVoice; audio: AudioTools }): Promise<Result<VoiceConversion, ConvertVoiceError>> {
   const odes = createOdeStore(deps.sql, SEEDED);
@@ -96,6 +124,13 @@ export async function convertSeededVoice(deps: { sql: Sql; voice: ElevenVoice; a
   if (stems._tag === "err") return stems;
   const sung = await deps.voice.convert(stems.value.vocals);
   if (sung._tag === "err") return sung;
+  // Where the singing begins, before and after: the stems start with the song, so a late or early start is an offset every line inherits.
+  const onsetBefore = await deps.audio.leadingSilenceMs(stems.value.vocals);
+  if (onsetBefore._tag === "err") return onsetBefore;
+  const onsetAfter = await deps.audio.leadingSilenceMs(sung.value);
+  if (onsetAfter._tag === "err") return onsetAfter;
+  if (Math.abs(onsetAfter.value - onsetBefore.value) > MAX_ONSET_SHIFT_MS) return err(new VocalsMoved(onsetBefore.value, onsetAfter.value));
+
   const mixed = await deps.audio.mix({ vocals: sung.value, music: stems.value.music });
   if (mixed._tag === "err") return mixed;
 

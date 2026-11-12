@@ -1,13 +1,14 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { PGlite } from "@electric-sql/pglite";
 import { writeFallbackRecording } from "../src/ops/fallback-recording.ts";
-import { clipPlan, decide, readElevenCredits, renderReport, runClip, type Credits, type RunRecord } from "../src/ops/reliability.ts";
-import { buildSeededOde } from "../src/ops/seed-ode.ts";
+import { readEnv } from "../src/ops/env.ts";
+import { clipLineWindows, clipPlan, decide, readElevenCredits, renderReport, runClip, type Credits, type RunRecord } from "../src/ops/reliability.ts";
+import { buildSeededOde, defaultReleaseDate } from "../src/ops/seed-ode.ts";
 import { createAnthropicClaude } from "../src/server/claude.ts";
 import { createElevenMusic } from "../src/server/eleven-music.ts";
 import type { Sql } from "../src/server/ports.ts";
 import { migrate } from "../src/server/schema.ts";
-import { seedLyrics } from "../test/seed.ts";
+import { seedLyrics } from "../src/testing/seed-lyrics.ts";
 
 /**
  * The reliability runs (#16): N clip runs of 35 s and one full Ode run through the real pipeline (Claude and Eleven Music),
@@ -26,13 +27,14 @@ const clipCount = smoke ? 1 : Number(args[args.indexOf("--clips") + 1] || 10);
 const withFull = !smoke && !args.includes("--no-full");
 const MAX_CONSECUTIVE_FAILURES = 3;
 
-function requireEnv(name: string): string {
-  const value = process.env[name];
-  if (!value) throw new Error(`${name} is not set; run with node --env-file=<path to .env>`);
-  return value;
+const env = readEnv(["ELEVENLABS_API_KEY", "ANTHROPIC_API_KEY"]);
+// The one place these commands end on a missing variable: print which, and exit non-zero before anything is spent.
+if (env._tag === "err") {
+  console.error(env.error.message);
+  process.exit(1);
 }
-const elevenKey = requireEnv("ELEVENLABS_API_KEY");
-const anthropicKey = requireEnv("ANTHROPIC_API_KEY");
+const elevenKey = env.value.ELEVENLABS_API_KEY;
+const anthropicKey = env.value.ANTHROPIC_API_KEY;
 
 // Claude's port returns the answer only, so the tokens are read off the API replies as they pass.
 const claude = { calls: 0, inputTokens: 0, outputTokens: 0 };
@@ -78,8 +80,8 @@ const records: RunRecord[] = [];
 const creditsBefore = await balance();
 console.log(`ElevenLabs credits before: ${creditsBefore ? `${creditsBefore.used} of ${creditsBefore.limit}` : "unknown"}`);
 
-const lines = seedLyrics.friends[0]?.lines ?? [];
-const plan = clipPlan(lines, seedLyrics.hook);
+const clipLines = seedLyrics.friends[0]?.lines ?? [];
+const plan = clipPlan(clipLines, seedLyrics.hook);
 let consecutive = 0;
 let stoppedEarly = false;
 let afterClips: Credits | undefined = creditsBefore;
@@ -87,9 +89,12 @@ for (let n = 1; n <= clipCount; n++) {
   const started = performance.now();
   const run = await runClip(music, plan);
   const seconds = (performance.now() - started) / 1000;
-  const record: RunRecord = run._tag === "ok" ? { kind: "clip", label: `clip ${n}`, ok: true, seconds } : { kind: "clip", label: `clip ${n}`, ok: false, tag: run.error._tag, seconds };
+  const record: RunRecord =
+    run._tag === "ok"
+      ? { kind: "clip", label: `clip ${n}`, ok: true, seconds, lineWindows: clipLineWindows(plan, clipLines, run.value.words) }
+      : { kind: "clip", label: `clip ${n}`, ok: false, tag: run.error._tag, seconds };
   records.push(record);
-  console.log(`clip ${n}: ${run._tag === "ok" ? `ok, audio ${run.value.audioSeconds.toFixed(1)} s` : `FAILED ${run.error._tag}: ${String(run.error.cause ?? run.error.message)}`} in ${seconds.toFixed(1)} s`);
+  console.log(`clip ${n}: ${run._tag === "ok" ? `ok, audio ${run.value.audioSeconds.toFixed(1)} s, line windows: ${record.lineWindows}` : `FAILED ${run.error._tag}: ${String(run.error.cause ?? run.error.message)}`} in ${seconds.toFixed(1)} s`);
 
   consecutive = record.ok ? 0 : consecutive + 1;
   if (consecutive >= MAX_CONSECUTIVE_FAILURES) {
@@ -123,7 +128,7 @@ if (withFull && !stoppedEarly) {
   const sql: Sql = { query: (text, params) => db.query(text, params), transaction: (work) => db.transaction((tx) => work(tx)) };
   await migrate(sql);
   const now = new Date();
-  const releaseDate = new Date(now.getTime() + 21 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const releaseDate = defaultReleaseDate(now);
 
   const started = performance.now();
   const built = await buildSeededOde({ sql, claude: realClaude, music, notes: seedNotes, now, releaseDate });

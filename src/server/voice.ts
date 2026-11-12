@@ -8,10 +8,19 @@ export type OdeVoice = (typeof ODE_VOICES)[number];
 export const DEFAULT_VOICE: OdeVoice = "eleven-music";
 
 /**
- * What the cassette page says about the voice, null when it says nothing. The one place the words live: if the voice test
- * (H3) says the clone is not recognised, change the `payer` label to "a voice like mine" and nothing else.
+ * The words for the payer's cloned voice, by `VOICE_LABEL`: the default, and `like` for when the H3 voice test says the clone
+ * is not recognised as the payer. The one place the words live.
  */
-export const VOICE_LABELS: Readonly<Record<OdeVoice, string | null>> = {
-  "eleven-music": null,
-  payer: "in my voice",
-};
+export const PAYER_VOICE_WORDS = { default: "in my voice", like: "a voice like mine" } as const;
+
+/**
+ * What the cassette page says about each voice, null when it says nothing.
+ *
+ * @param setting - The `VOICE_LABEL` environment variable: `like` for "a voice like mine"; anything else, or unset, is "in my voice".
+ */
+export function voiceLabels(setting: string | undefined): Readonly<Record<OdeVoice, string | null>> {
+  return { "eleven-music": null, payer: setting === "like" ? PAYER_VOICE_WORDS.like : PAYER_VOICE_WORDS.default };
+}
+
+/** The labels this process serves, read once from `VOICE_LABEL` at start. */
+export const VOICE_LABELS = voiceLabels(process.env["VOICE_LABEL"]);
