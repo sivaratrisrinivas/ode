@@ -3,6 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
+import { MP3_BITRATE_KBPS, MP3_SAMPLE_RATE } from "./elevenlabs.ts";
 import { AudioToolsUnavailable, type AudioTools } from "./ports.ts";
 import { err, ok, type Result } from "./result.ts";
 
@@ -26,8 +27,24 @@ function decodedMs(stderr: string): number | undefined {
   return ((Number(hours) * 60 + Number(minutes)) * 60 + Number(seconds)) * 1000 + Number(hundredths) * 10;
 }
 
+/** Below this level (dBFS) a stem counts as silent when finding where its sound begins. */
+const SILENCE_FLOOR_DB = -40;
+
+/** Where the first sound is, in ms, from `silencedetect`'s report: 0 when the audio does not start in silence, the whole length when it is all silent. */
+function leadingSilenceFrom(stderr: string): number | undefined {
+  const start = /silence_start: (-?[\d.]+)/.exec(stderr);
+  if (start === null) return 0;
+  // A silence that begins later than the first few ms is not leading.
+  if (Number(start[1]) > 0.05) return 0;
+  const end = /silence_end: ([\d.]+)/.exec(stderr);
+  return end === null ? decodedMs(stderr) : Math.round(Number(end[1]) * 1000);
+}
+
+/** The loudest a remix may get, as a fraction of full scale; below 1 so the MP3 encoder's own overshoot does not clip either. */
+const PEAK_LIMIT = 0.9;
+
 /**
- * The audio tools on ffmpeg: measure how long audio plays by decoding it, and mix two stems into one 128 kbps MP3.
+ * The audio tools on ffmpeg: measure how long audio plays by decoding it, and find where audio first sounds, and mix two stems into one MP3 (summed, then limited so the sum cannot clip).
  * Audio goes through a temporary directory, which is removed afterwards.
  *
  * @param options - `ffmpeg` is the executable (default `ffmpeg` on the PATH); `run` replaces running it, for tests.
@@ -63,6 +80,14 @@ export function createFfmpegAudio(options: { ffmpeg?: string; run?: RunFfmpeg } 
       return measured.value === undefined ? err(new AudioToolsUnavailable("ffmpeg did not report how long the audio plays")) : ok(measured.value);
     },
 
+    async leadingSilenceMs(audio) {
+      const measured = await inTemporaryDirectory([audio], async ([input = ""]) =>
+        leadingSilenceFrom((await run(["-hide_banner", "-nostdin", "-i", input, "-af", `silencedetect=noise=${SILENCE_FLOOR_DB}dB:d=0.05`, "-f", "null", "-"])).stderr),
+      );
+      if (measured._tag === "err") return measured;
+      return measured.value === undefined ? err(new AudioToolsUnavailable("ffmpeg did not report how long the audio plays")) : ok(measured.value);
+    },
+
     async mix({ vocals, music }) {
       return inTemporaryDirectory([vocals, music], async ([first = "", second = ""], output) => {
         await run([
@@ -73,15 +98,15 @@ export function createFfmpegAudio(options: { ffmpeg?: string; run?: RunFfmpeg } 
           first,
           "-i",
           second,
-          // The stems are one song split in two, so they are summed, not averaged down.
+          // The stems are one song split in two, so they are summed, not averaged down; the limiter keeps a sum that is louder than the song from clipping.
           "-filter_complex",
-          "amix=inputs=2:duration=longest:normalize=0",
+          `amix=inputs=2:duration=longest:normalize=0,alimiter=limit=${PEAK_LIMIT}:level=disabled`,
           "-c:a",
           "libmp3lame",
           "-b:a",
-          "128k",
+          `${MP3_BITRATE_KBPS}k`,
           "-ar",
-          "44100",
+          String(MP3_SAMPLE_RATE),
           output,
         ]);
         return new Uint8Array(await readFile(output));

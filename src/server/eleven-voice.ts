@@ -1,9 +1,9 @@
+import { elevenLabsUrl } from "./elevenlabs.ts";
 import { VoiceUnavailable, type ElevenVoice } from "./ports.ts";
 import { err, ok, type Result } from "./result.ts";
 import { readZip } from "./zip.ts";
 
-const SEPARATE_ENDPOINT = "https://api.elevenlabs.io/v1/music/stem-separation?output_format=mp3_44100_128";
-const VOICE_CHANGER_ENDPOINT = "https://api.elevenlabs.io/v1/voice-changer";
+const SEPARATE_ENDPOINT = elevenLabsUrl("/v1/music/stem-separation", { audio: true });
 /** Vocals and music, nothing finer. */
 const STEM_VARIATION = "two_stems_v1";
 const STS_MODEL = "eleven_multilingual_sts_v2";
@@ -30,7 +30,7 @@ function audioFile(bytes: Uint8Array): Blob {
 
 /**
  * The production ElevenLabs voice port: `POST /v1/music/stem-separation` (`two_stems_v1`, a ZIP of `vocals.mp3` and
- * `instrumental.mp3`) and `POST /v1/voice-changer/{voice_id}` (`eleven_multilingual_sts_v2`), both asking for MP3 at 128 kbps.
+ * `instrumental.mp3`) and `POST /v1/voice-changer/{voice_id}` (`eleven_multilingual_sts_v2`), both asking for `MP3_OUTPUT_FORMAT`.
  *
  * @param options - An ElevenLabs API key, the payer's cloned voice ID, and a replaceable `fetch` for tests.
  */
@@ -60,7 +60,7 @@ export function createElevenVoice(options: { apiKey: string; voiceId: string; fe
       const form = new FormData();
       form.append("audio", audioFile(vocals), "vocals.mp3");
       form.append("model_id", STS_MODEL);
-      return post(send, options.apiKey, `${VOICE_CHANGER_ENDPOINT}/${encodeURIComponent(options.voiceId)}?output_format=mp3_44100_128`, form);
+      return post(send, options.apiKey, elevenLabsUrl(`/v1/voice-changer/${encodeURIComponent(options.voiceId)}`, { audio: true }), form);
     },
   };
 }

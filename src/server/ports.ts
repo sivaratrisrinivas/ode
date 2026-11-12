@@ -67,9 +67,11 @@ export interface ElevenMusic {
   compose(chunks: readonly ChunkPlan[]): Promise<Result<ComposedSong, MusicUnavailable>>;
 }
 
-/** A song split in two: the singing, and everything else. */
+/** A song split in two: the singing, and everything else. Both are MP3 and start where the song starts. */
 export interface Stems {
+  /** The singing alone. */
   vocals: Uint8Array;
+  /** Everything but the singing. */
   music: Uint8Array;
 }
 
@@ -110,7 +112,12 @@ export class AudioToolsUnavailable extends Error {
 export interface AudioTools {
   /** How long `audio` plays, in milliseconds, as decoded (not as a header claims). */
   durationMs(audio: Uint8Array): Promise<Result<number, AudioToolsUnavailable>>;
-  /** Play `vocals` over `music` from the same start, as one MP3 at 128 kbps. */
+  /**
+   * How long `audio` is silent before its first sound, in milliseconds; 0 when it starts sounding at once, and its whole length
+   * when it never sounds. Compared between a vocals stem before and after conversion, it shows whether the singing moved.
+   */
+  leadingSilenceMs(audio: Uint8Array): Promise<Result<number, AudioToolsUnavailable>>;
+  /** Play `vocals` over `music` from the same start, as one MP3 at 128 kbps (`MP3_OUTPUT_FORMAT`), summed and kept from clipping. */
   mix(stems: Stems): Promise<Result<Uint8Array, AudioToolsUnavailable>>;
 }
 

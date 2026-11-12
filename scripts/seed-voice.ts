@@ -2,25 +2,20 @@
 // Needs DATABASE_URL, ELEVENLABS_API_KEY and ELEVENLABS_VOICE_ID, and ffmpeg on the PATH (or FFMPEG_PATH).
 // Run it once, with `npm run seed:voice`; see docs/agents/run.md. Nothing is printed of the keys.
 import pg from "pg";
+import { readEnv } from "../src/ops/env.ts";
 import { createElevenVoice } from "../src/server/eleven-voice.ts";
 import { createFfmpegAudio } from "../src/server/ffmpeg-audio.ts";
 import { createPostgresSql } from "../src/server/postgres.ts";
 import { migrate } from "../src/server/schema.ts";
 import { convertSeededVoice } from "../src/server/voice-conversion.ts";
 
-/** A variable the command cannot run without; the process ends naming it when it is missing. */
-function required(name: string): string {
-  const value = process.env[name];
-  if (!value) {
-    console.error(`${name} is not set.`);
-    process.exit(1);
-  }
-  return value;
+const env = readEnv(["DATABASE_URL", "ELEVENLABS_API_KEY", "ELEVENLABS_VOICE_ID"]);
+// The one place these commands end on a missing variable: print which, and exit non-zero before anything is spent.
+if (env._tag === "err") {
+  console.error(env.error.message);
+  process.exit(1);
 }
-
-const databaseUrl = required("DATABASE_URL");
-const apiKey = required("ELEVENLABS_API_KEY");
-const voiceId = required("ELEVENLABS_VOICE_ID");
+const { DATABASE_URL: databaseUrl, ELEVENLABS_API_KEY: apiKey, ELEVENLABS_VOICE_ID: voiceId } = env.value;
 
 // Add ?sslmode=require to the URL for Render's external connection string.
 const pool = new pg.Pool({ connectionString: databaseUrl });

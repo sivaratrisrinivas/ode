@@ -1,8 +1,9 @@
 import type { ChunkPlan, WordTiming } from "./ode.ts";
+import { elevenLabsUrl } from "./elevenlabs.ts";
 import { MusicUnavailable, type ComposedSong, type ElevenMusic } from "./ports.ts";
 import { err, ok, type Result } from "./result.ts";
 
-const ENDPOINT = "https://api.elevenlabs.io/v1/music/detailed?output_format=mp3_44100_128";
+const ENDPOINT = elevenLabsUrl("/v1/music/detailed", { audio: true });
 const MODEL = "music_v2_5";
 /** Composing takes seconds; this only stops a hung request from holding a run forever. */
 const TIMEOUT_MS = 120_000;

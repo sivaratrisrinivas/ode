@@ -1,6 +1,8 @@
-import type { ChunkPlan } from "../server/ode.ts";
+import { elevenLabsUrl, MP3_BYTES_PER_SECOND } from "../server/elevenlabs.ts";
+import { buildOde, type ChunkPlan, type WordTiming } from "../server/ode.ts";
 import type { ElevenMusic, MusicUnavailable } from "../server/ports.ts";
 import { err, ok, type Result } from "../server/result.ts";
+import type { SeedOdeFailureTag } from "./seed-ode.ts";
 
 /** ElevenLabs credits at one moment: what this billing period has used, and what the plan allows. */
 export interface Credits {
@@ -19,7 +21,7 @@ export class CreditsUnavailable extends Error {
   }
 }
 
-const SUBSCRIPTION_URL = "https://api.elevenlabs.io/v1/user/subscription";
+const SUBSCRIPTION_URL = elevenLabsUrl("/v1/user/subscription");
 
 /**
  * Read the ElevenLabs credit balance (`character_count` of `character_limit`, which is how the subscription API counts
@@ -78,16 +80,35 @@ export class ClipWrongLength extends Error {
   }
 }
 
-/** The app asks Eleven Music for MP3 at 128 kbps, which is 16,000 bytes of audio a second. */
-const BYTES_PER_SECOND = 16_000;
 /** How far from the plan a clip may run: the day-1 probe came back 0.04 s over, so this only catches a truncated or padded song. */
 const LENGTH_TOLERANCE_SECONDS = 3;
 
 /** A clip that came back right. */
 export interface ClipDone {
   readonly audio: Uint8Array;
-  /** Estimated from the byte count at 128 kbps, so it is close, not exact. */
+  /** Estimated from the byte count at the app's MP3 bitrate (`MP3_BYTES_PER_SECOND`), so it is close, not exact. */
   readonly audioSeconds: number;
+  /** The sung words with their times, as Eleven Music returned them; empty when no timestamps came back. */
+  readonly words: readonly WordTiming[];
+}
+
+/** How a clip's line windows were found: from the sung words, or as equal quarters because the words did not line up (ADR 0001). */
+export type LineWindows = "aligned" | "equal-quarter fallback";
+
+/**
+ * Whether the clip's four lines can be found in the sung words the way the app finds a verse's lines (`buildOde`), so a clip run
+ * also shows that word timestamps came back and line up. The verse is the stretch after the intro that the line chunks fill.
+ *
+ * @param plan - The plan that was composed, normally `clipPlan(...)`.
+ * @param lines - The lines the plan sings, as given to `clipPlan`.
+ * @param words - The sung words from the clip.
+ * @returns `aligned`, or `equal-quarter fallback` when the words are missing or do not match the lines.
+ */
+export function clipLineWindows(plan: readonly ChunkPlan[], lines: readonly string[], words: readonly WordTiming[]): LineWindows {
+  const startMs = plan[0]?.durationMs ?? 0;
+  const endMs = plan.slice(0, -1).reduce((total, chunk) => total + chunk.durationMs, 0);
+  const { unaligned } = buildOde({ chunks: plan, sections: [{ kind: "verse", friend: "clip", lines: lines.slice(0, 4), startMs, endMs }] }, words);
+  return unaligned.length === 0 ? "aligned" : "equal-quarter fallback";
 }
 
 /**
@@ -101,9 +122,9 @@ export async function runClip(music: ElevenMusic, plan: readonly ChunkPlan[]): P
   const song = await music.compose(plan);
   if (song._tag === "err") return err(song.error);
   const plannedSeconds = plan.reduce((total, chunk) => total + chunk.durationMs, 0) / 1000;
-  const audioSeconds = song.value.audio.length / BYTES_PER_SECOND;
+  const audioSeconds = song.value.audio.length / MP3_BYTES_PER_SECOND;
   if (Math.abs(audioSeconds - plannedSeconds) > LENGTH_TOLERANCE_SECONDS) return err(new ClipWrongLength(plannedSeconds, audioSeconds));
-  return ok({ audio: song.value.audio, audioSeconds });
+  return ok({ audio: song.value.audio, audioSeconds, words: song.value.words });
 }
 
 /** One reliability run, as logged: a clip or the full Ode, whether it worked, how long it took and what it cost. */
@@ -112,11 +133,13 @@ export interface RunRecord {
   /** What the report calls the run ("clip 3", "full Ode"). */
   readonly label: string;
   readonly ok: boolean;
-  /** Why it failed, from the failure tags the app records plus `ClipWrongLength`; absent when it worked. */
-  readonly tag?: string;
+  /** Why it failed, from the failure tags the app records (through `SeedOdeFailureTag`) plus `ClipWrongLength`; absent when it worked. */
+  readonly tag?: SeedOdeFailureTag | "ClipWrongLength";
   readonly seconds: number;
   /** ElevenLabs credits the run used, from the balance before and after it; undefined when a balance could not be read. */
   readonly credits?: number | undefined;
+  /** For a clip that came back: whether its line windows were found from the sung words or fell back to equal quarters. */
+  readonly lineWindows?: LineWindows;
 }
 
 /** The share of runs that may fail before the video uses the fallback: above this, the live Ode is too risky to film. */
@@ -127,12 +150,14 @@ export const DECISION_RULE = `failure rate high (more than ${MAX_FAILURE_RATE * 
 
 /**
  * Apply the decision rule: the labeled fallback when more than 10% of the runs failed, or when the full run failed, since the
- * full run is what the video would film.
+ * full run is what the video would film. With no runs at all nothing shows the live Ode works, so the answer is `fallback`
+ * (not `live`, and not a rate of 0 of 0).
  *
  * @param records - Every run.
  * @returns `fallback` or `live`.
  */
 export function decide(records: readonly RunRecord[]): "live" | "fallback" {
+  if (records.length === 0) return "fallback";
   const failed = records.filter((record) => !record.ok);
   const fullFailed = failed.some((record) => record.kind === "full");
   return fullFailed || failed.length / records.length > MAX_FAILURE_RATE ? "fallback" : "live";
@@ -149,6 +174,7 @@ export interface ClaudeUsage {
  * The reliability report, as Markdown for `notes/`.
  *
  * @param report - The date, every run, the ElevenLabs balance before and after (undefined when unreadable) and Claude's usage.
+ *   With no runs the failure rate reads "no runs" (never NaN) and the decision is the fallback, as `decide` says.
  */
 export function renderReport(report: {
   date: string;
@@ -160,7 +186,7 @@ export function renderReport(report: {
   const { records, creditsBefore, creditsAfter, claude } = report;
   const failed = records.filter((record) => !record.ok).length;
   const rows = records.map(
-    (record) => `| ${record.label} | ${record.ok ? "ok" : "failed"} | ${record.tag ?? ""} | ${record.seconds.toFixed(1)} | ${record.credits ?? "-"} |`,
+    (record) => `| ${record.label} | ${record.ok ? "ok" : "failed"} | ${record.tag ?? ""} | ${record.seconds.toFixed(1)} | ${record.credits ?? "-"} | ${record.lineWindows ?? "-"} |`,
   );
   const credits =
     creditsBefore !== undefined && creditsAfter !== undefined
@@ -169,16 +195,16 @@ export function renderReport(report: {
   return [
     `# Reliability runs, ${report.date}`,
     "",
-    "| Run | Result | Failure tag | Seconds | Credits |",
-    "|---|---|---|---|---|",
+    "| Run | Result | Failure tag | Seconds | Credits | Line windows |",
+    "|---|---|---|---|---|---|",
     ...rows,
     "",
-    `Failure rate: ${failed} of ${records.length} runs (${Math.round((failed / records.length) * 100)}%)`,
+    records.length === 0 ? "Failure rate: no runs were made" : `Failure rate: ${failed} of ${records.length} runs (${Math.round((failed / records.length) * 100)}%)`,
     `ElevenLabs credits: ${credits}`,
     `Claude: ${claude.calls} calls, ${claude.inputTokens} input tokens, ${claude.outputTokens} output tokens`,
     "",
     `Decision rule: ${DECISION_RULE}`,
-    `Decision: use the ${decide(records) === "fallback" ? "labeled fallback" : "live Ode"} in the video.`,
+    `Decision: use the ${decide(records) === "fallback" ? "labeled fallback" : "live Ode"} in the video${records.length === 0 ? " (no runs were made, so nothing shows the live Ode works)" : ""}.`,
     "",
   ].join("\n");
 }
