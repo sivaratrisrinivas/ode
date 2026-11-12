@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactElement } from "react";
-import { Brand, Reels } from "./chrome.tsx";
+import { Brand, Deck } from "./chrome.tsx";
 import { UNREACHABLE } from "./messages.tsx";
 
 /** One part of a verse share, as the API lists it: only what the friend may show. */
@@ -158,29 +158,20 @@ export function SharePage({ token }: { token: string }): ReactElement {
         <h1 className="ode-title">{view.title}</h1>
       </header>
       <div className="ode-share-card">
-        <div className="ode-deck" data-playing={playing === "idle" ? undefined : ""}>
-          <div className="ode-deck-label">
-            <p className="ode-deck-trip">{view.friend}’s verse</p>
-            <p className="ode-deck-side">A</p>
-          </div>
-          <div className="ode-deck-window">
-            <Reels progress={0.35} />
-          </div>
-          <div className="ode-deck-tray">
-            {playing === "idle" ? (
-              <button className="primary ode-play" onClick={() => void play()}>
-                {PlayIcon}
-                Play {view.friend}’s verse
-              </button>
-            ) : (
-              <button className="primary ode-play" onClick={pause}>
-                {StopIcon}
-                Stop
-              </button>
-            )}
-            {playing === "plain" && <audio ref={plain} controls src={view.audioUrl} onEnded={() => setPlaying("idle")} />}
-          </div>
-        </div>
+        <Deck label={`${view.friend}’s verse`} progress={0.35} playing={playing !== "idle"}>
+          {playing === "idle" ? (
+            <button className="primary ode-play" onClick={() => void play()}>
+              {PlayIcon}
+              Play {view.friend}’s verse
+            </button>
+          ) : (
+            <button className="primary ode-play" onClick={pause}>
+              {StopIcon}
+              Stop
+            </button>
+          )}
+          {playing === "plain" && <audio ref={plain} controls src={view.audioUrl} onEnded={() => setPlaying("idle")} />}
+        </Deck>
         <div className="ode-card ode-jcard">
           {view.sections.map((section, index) => {
             switch (section.kind) {

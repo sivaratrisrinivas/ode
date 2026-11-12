@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Brand } from "./chrome.tsx";
+import { Brand, GrowingField } from "./chrome.tsx";
 import { OdeStudio } from "./OdeStudio.tsx";
 import { failureMessage, UNREACHABLE, Warnings } from "./messages.tsx";
 
@@ -67,7 +67,7 @@ function Row({ row, onChange }: { row: LedgerRow; onChange: (row: LedgerRow) => 
           </label>
           <label>
             Inside joke
-            <input value={joke} onChange={(e) => setJoke(e.target.value)} onBlur={saveJoke} />
+            <GrowingField value={joke} onChange={setJoke} onBlur={saveJoke} />
           </label>
         </div>
         <Warnings messages={row.warnings} />

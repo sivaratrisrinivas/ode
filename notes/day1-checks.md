@@ -12,7 +12,7 @@ Run 2026-11-08. Each item: result, then the decision it drives.
 | Money lands on the overridden payee | ✅ confirmed with `GET /v2/checkout/orders/{id}`: `payee` matches |
 | Capture response includes payee | ❌ not present; read the order back to confirm the payee |
 | Receiver fee | $0.52 on $1.00 for both account types |
-| `PAYMENT.CAPTURE.COMPLETED` webhook | ⚠️ tested 2026-11-12 (see "S0r" below): subscription fixed and a simulated event accepted by PayPal; arrival at the app not confirmed |
+| `PAYMENT.CAPTURE.COMPLETED` webhook | ⚠️ tested 2026-11-12 (see "S0r" below): subscription fixed and a simulated event accepted by PayPal; arrival at the app not confirmed; re-run the read-only part any time with `scripts/webhook-check.ts` (`docs/agents/run.md`) |
 
 **Decisions**
 - Friends stay **Personal** sandbox accounts; the Business fallback isn't needed.

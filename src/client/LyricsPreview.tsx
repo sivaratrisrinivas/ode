@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { GrowingField } from "./chrome.tsx";
 import { failureMessage, UNREACHABLE, Warnings } from "./messages.tsx";
 
 const MAX_LINE_LENGTH = 200;
@@ -66,7 +67,7 @@ function LineField({ label, line, target, onSaved }: { label: string; line: Line
     <div className="ode-lyric">
       <label>
         <span>{label}</span>
-        <input value={text} maxLength={MAX_LINE_LENGTH} aria-invalid={flagged} onChange={(e) => setText(e.target.value)} onBlur={() => void save()} />
+        <GrowingField value={text} maxLength={MAX_LINE_LENGTH} aria-invalid={flagged} onChange={setText} onBlur={() => void save()} />
       </label>
       <Warnings messages={line.problems} />
       {problem !== null && <p role="alert" className="ode-problem">{problem}</p>}
