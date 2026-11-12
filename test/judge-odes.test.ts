@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { fakeClaudeByTask, fakeMusic } from "../src/testing/fakes.ts";
 import { createHarness, MAKE_ODE, pollUntil } from "./harness.ts";
-import { goaExtraction, goaNotes, lyricsForFriends, seedExtraction, seedFriendAccounts, seedNotes } from "./seed.ts";
+import { goaExtraction, goaNotes, lyricsForFriends, seedExtraction, seedFriendAccounts, seedNotes } from "../src/testing/seed.ts";
 
 interface Standing {
   amountOwedCents: number;

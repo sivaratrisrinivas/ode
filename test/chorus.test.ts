@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { fakeClaudeByTask } from "../src/testing/fakes.ts";
 import { createHarness, MAKE_ODE, pollUntil } from "./harness.ts";
-import { seedExtraction, seedLyrics, seedNotes } from "./seed.ts";
+import { seedExtraction, seedLyrics, seedNotes } from "../src/testing/seed.ts";
 
 /** What the payer's page and a friend's page are both told about a ready Ode's finish. */
 interface ReadyOde {

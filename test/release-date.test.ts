@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { parseReleaseDate } from "../src/server/release-date.ts";
 import { fakeClaudeByTask } from "../src/testing/fakes.ts";
 import { createHarness, pollUntil } from "./harness.ts";
-import { seedExtraction, seedLyrics, seedNotes } from "./seed.ts";
+import { seedExtraction, seedLyrics, seedNotes } from "../src/testing/seed.ts";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 

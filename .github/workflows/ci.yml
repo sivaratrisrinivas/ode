@@ -13,5 +13,10 @@ jobs:
           node-version-file: .node-version
           cache: npm
       - run: npm ci
+      # The real-ffmpeg tests skip unless FFMPEG_PATH names a binary; a missing ffmpeg fails this step rather than skipping them.
+      - run: |
+          sudo apt-get update && sudo apt-get install -y ffmpeg
+          command -v ffmpeg
+          echo "FFMPEG_PATH=$(command -v ffmpeg)" >> "$GITHUB_ENV"
       - run: npm run check
       - run: npm test

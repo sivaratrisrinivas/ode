@@ -3,7 +3,7 @@ import { ClaudeUnavailable, type Claude } from "../src/server/ports.ts";
 import { err } from "../src/server/result.ts";
 import { fakeClaude } from "../src/testing/fakes.ts";
 import { createHarness } from "./harness.ts";
-import { seedExtraction, seedNotes } from "./seed.ts";
+import { seedExtraction, seedNotes } from "../src/testing/seed.ts";
 
 interface RowBody {
   friend: string;

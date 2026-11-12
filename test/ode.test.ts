@@ -3,7 +3,7 @@ import { ClaudeUnavailable, type ElevenMusic } from "../src/server/ports.ts";
 import { err, ok, type Result } from "../src/server/result.ts";
 import { fakeClaudeByTask, fakeMusic } from "../src/testing/fakes.ts";
 import { createHarness, MAKE_ODE, pollUntil } from "./harness.ts";
-import { seedExtraction, seedLyrics, seedNotes } from "./seed.ts";
+import { seedExtraction, seedLyrics, seedNotes } from "../src/testing/seed.ts";
 
 interface TimedLineBody {
   text: string;

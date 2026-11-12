@@ -1,8 +1,8 @@
 import { readFileSync } from "node:fs";
-import { seedLyrics } from "../src/testing/seed-lyrics.ts";
+import { seedLyrics } from "./seed-lyrics.ts";
 
 /** The placeholder trip notes the demo and the tests share (`seed/notes.txt`). */
-export const seedNotes = readFileSync(new URL("../seed/notes.txt", import.meta.url), "utf8");
+export const seedNotes = readFileSync(new URL("../../seed/notes.txt", import.meta.url), "utf8");
 
 /**
  * What Claude returns for the seed notes: each friend's amount before group costs

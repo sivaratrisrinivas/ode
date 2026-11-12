@@ -3,7 +3,7 @@ import { ClaudeUnavailable } from "../src/server/ports.ts";
 import { err, ok, type Result } from "../src/server/result.ts";
 import { fakeClaudeByTask } from "../src/testing/fakes.ts";
 import { createHarness } from "./harness.ts";
-import { seedExtraction, seedLyrics as cleanLyrics, seedNotes } from "./seed.ts";
+import { seedExtraction, seedLyrics as cleanLyrics, seedNotes } from "../src/testing/seed.ts";
 
 interface LineBody {
   text: string;

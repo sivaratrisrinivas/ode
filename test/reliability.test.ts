@@ -13,7 +13,7 @@ import { migrate } from "../src/server/schema.ts";
 import { fakeClaudeByTask, fakeMusic } from "../src/testing/fakes.ts";
 import { MusicUnavailable, type ElevenMusic, type Sql } from "../src/server/ports.ts";
 import { err, ok } from "../src/server/result.ts";
-import { seedExtraction, seedLyrics, seedNotes } from "./seed.ts";
+import { seedExtraction, seedLyrics, seedNotes } from "../src/testing/seed.ts";
 
 /** A fetch that answers every request with `body`, and remembers what it was asked. */
 function fetchAnswering(status: number, body: unknown) {

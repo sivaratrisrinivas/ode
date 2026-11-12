@@ -4,6 +4,8 @@
  * way to stop a process instead; exits 0 for any other command.
  */
 
+export {}; // a module, so the top-level await below typechecks
+
 const SELF_MATCHING = /\b(pkill|pgrep)\b[^|;&\n]*\s(-[a-zA-Z]*f[a-zA-Z]*|--full)(\s|$)/;
 
 let text = "";

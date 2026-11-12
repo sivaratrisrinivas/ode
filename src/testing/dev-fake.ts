@@ -3,7 +3,7 @@ import { PGlite } from "@electric-sql/pglite";
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
-import { goaExtraction, lyricsForFriends, seedExtraction, seedFriendAccounts, seedLyrics } from "../../test/seed.ts";
+import { goaExtraction, lyricsForFriends, seedExtraction, seedFriendAccounts, seedLyrics } from "./seed.ts";
 import { createApi } from "../server/app.ts";
 import { friendAccounts } from "../server/friend-accounts.ts";
 import { createOdeJob } from "../server/ode-job.ts";

@@ -5,7 +5,7 @@ import { createOdeJob } from "../src/server/ode-job.ts";
 import type { Claude, ElevenMusic, Sql } from "../src/server/ports.ts";
 import { migrate } from "../src/server/schema.ts";
 import { fakePorts, fakeWorkflow } from "../src/testing/fakes.ts";
-import { seedFriendAccounts } from "./seed.ts";
+import { seedFriendAccounts } from "../src/testing/seed.ts";
 
 // PGlite takes ~5 s to boot, so each test file boots one and every harness
 // resets it. Tests within a file run sequentially, so sharing is safe.

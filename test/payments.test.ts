@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { fakeClaudeByTask } from "../src/testing/fakes.ts";
 import { createHarness, MAKE_ODE, pollUntil } from "./harness.ts";
-import { seedExtraction, seedFriendAccounts, seedLyrics, seedNotes } from "./seed.ts";
+import { seedExtraction, seedFriendAccounts, seedLyrics, seedNotes } from "../src/testing/seed.ts";
 
 interface PaymentBody {
   amountOwedCents: number;

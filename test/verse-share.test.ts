@@ -2,7 +2,7 @@ import { inflateSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
 import { fakeClaudeByTask } from "../src/testing/fakes.ts";
 import { createHarness, MAKE_ODE, pollUntil } from "./harness.ts";
-import { goaExtraction, goaNotes, lyricsForFriends, seedExtraction, seedLyrics, seedNotes } from "./seed.ts";
+import { goaExtraction, goaNotes, lyricsForFriends, seedExtraction, seedLyrics, seedNotes } from "../src/testing/seed.ts";
 
 interface ReadyOde {
   status: string;

@@ -6,7 +6,7 @@ import type { Sql } from "../src/server/ports.ts";
 import { migrate } from "../src/server/schema.ts";
 import { fakePorts, fakeWorkflow } from "../src/testing/fakes.ts";
 import { migrateLegacy } from "./legacy-schema.ts";
-import { seedFriendAccounts } from "./seed.ts";
+import { seedFriendAccounts } from "../src/testing/seed.ts";
 
 async function json<T>(res: Response): Promise<T> {
   return res.json();
