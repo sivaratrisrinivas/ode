@@ -61,12 +61,6 @@ Florida, 2025. My school friends covered about $257.50 for me: the beach house, 
 - Keeping the cloned voice honest: only the Seeded Ode is converted, and the page labels it once converted (ADR 0002).
 - The credit budget: Own Odes are capped at 5 a day across all visitors.
 
-### Why now
-- ElevenLabs Music v2, which enforces chunk durations, launched in June 2026.
-- The stem separation endpoint was added in February 2026 ([API changelog mirror](https://skmtc.dev/elevenlabs/apis/elevenlabs-api-documentation/docs/v1/music/stem-separation/post)).
-
-Exact verse windows and a song converted into your own voice both depend on these.
-
 ### Evidence and limitations
 - **Pain (observed):**
   - My own unpaid $257.50.

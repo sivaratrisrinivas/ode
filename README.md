@@ -104,7 +104,7 @@ cp .env.example .env     # then fill it in, see the table
 npm ci
 npm run build            # builds the React client into dist/
 npm start                # migrates the database on startup, then serves on PORT
-npm run seed:ode         # once: builds the Seeded Ode from seed/notes.txt (about 1,300 music credits)
+npm run seed:ode         # once: builds the Seeded Ode from seed/notes.txt (about 1,300 music credits, measured in `notes/reliability-2026-11-12.md`)
 ```
 
 `npm run dev:server` restarts on file changes and `npm run dev:client` runs Vite with `/api` proxied to the server. A friend's link and the cassette work as soon as an Ode exists.
@@ -158,7 +158,7 @@ npm run seed:voice
 
 ```sh
 npm test            # API tests: in-process Postgres, fakes for Claude, Eleven Music, PayPal, the clock and the Workflow
-npm run check       # tsc, and every type assertion has a SAFETY comment
+npm run check       # tsc, every type assertion has a SAFETY comment, and the import check (scripts/check-imports.ts)
 ```
 
 Tests drive the HTTP API only (`test/harness.ts`). The fake Workflow runs the task's job in the test process with its own database stores, as a separate process would. `test/render-workflow.test.ts` and `test/workflow-config.test.ts` cover the two pieces that only touch Render's SDK and the environment. `npm test` takes 2 to 7 minutes.

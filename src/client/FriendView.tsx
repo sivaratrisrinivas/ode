@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactElement } from "react";
 import { Cassette, type ReadyOde, type Release, type Section, type VerseSection } from "./Cassette.tsx";
 import { Brand, Meter } from "./chrome.tsx";
+import { friendTitle, usePageTitle } from "./page-title.ts";
 import { failureMessage, UNREACHABLE } from "./messages.tsx";
 
 /** What a friend's page is told about their own money. */
@@ -31,6 +32,9 @@ interface FriendViewState {
 
 /** `ode` is what the cassette plays, made once per event so the cassette sees a new Ode only when the server sent one. */
 type Load = { status: "loading" } | { status: "gone" } | { status: "ready"; view: FriendViewState; ode: ReadyOde | null };
+
+/** What the page says while the event stream is down and the browser is retrying it. */
+const RECONNECTING = "Reconnecting…";
 
 const dollars = (cents: number) => `$${(cents / 100).toFixed(2)}`;
 
@@ -125,11 +129,9 @@ export function FriendView({ token }: { token: string }): ReactElement {
   }, [token]);
 
   const friendName = load.status === "ready" ? load.view.friend : null;
-  useEffect(() => {
-    document.title = friendName === null ? "Ode" : `An Ode for ${friendName}`;
-  }, [friendName]);
+  usePageTitle(friendTitle(friendName));
 
-  if (load.status === "loading") return <main className="ode-page"><p className="ode-loading">{reconnecting ? "Reconnecting…" : "Loading…"}</p></main>;
+  if (load.status === "loading") return <main className="ode-page"><p className="ode-loading">{reconnecting ? RECONNECTING : "Loading…"}</p></main>;
   if (load.status === "gone") {
     return (
       <main className="ode-page">
@@ -166,7 +168,7 @@ export function FriendView({ token }: { token: string }): ReactElement {
         <Brand small />
         <h1 className="ode-title">An Ode for {friend}</h1>
       </header>
-      {reconnecting && <p aria-live="polite" className="ode-notice">Reconnecting…</p>}
+      {reconnecting && <p aria-live="polite" className="ode-notice">{RECONNECTING}</p>}
       {load.ode !== null ? (
         <Cassette ode={load.ode} title="The Ode">
           {money}
