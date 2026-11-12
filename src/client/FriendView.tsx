@@ -124,7 +124,12 @@ export function FriendView({ token }: { token: string }): ReactElement {
     return () => events.close();
   }, [token]);
 
-  if (load.status === "loading") return <main className="ode-page"><p className="ode-loading">Loading…</p></main>;
+  const friendName = load.status === "ready" ? load.view.friend : null;
+  useEffect(() => {
+    document.title = friendName === null ? "Ode" : `An Ode for ${friendName}`;
+  }, [friendName]);
+
+  if (load.status === "loading") return <main className="ode-page"><p className="ode-loading">{reconnecting ? "Reconnecting…" : "Loading…"}</p></main>;
   if (load.status === "gone") {
     return (
       <main className="ode-page">
