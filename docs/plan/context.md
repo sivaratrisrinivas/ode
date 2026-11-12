@@ -33,6 +33,7 @@ Solo, about 12 h/day (10 is not a hard limit), uses AI coding agents. Skills: Go
   - If it fails, the pitch changes to a private thank-you track; the build stays the same.
 - **H2 (sharing, from the "social acceptance" insight):** a friend shares a song made about them. Signal: B forwards or posts the test verse.
 - **H3 (voice):** friends recognize the builder's cloned singing voice. Test on Nov 9: send B a 15-s clip in the cloned voice and ask "who's singing?" If not recognized, keep it but pitch it as "in a voice like mine", or fall back to the stock voice.
+- **H1–H3 result (reported by the payer, 2026-11-12):** the test with friends was run and "worked". H3 confirmed: Friend B recognised the cloned voice, so the label stays "in my voice" (`VOICE_LABEL` unset). Not recorded: who was Friend A and B, how B reacted compared with A (H1), and whether B shared the verse (H2). The write-up may say the test was small and the payer's own report; it may not quote friends or give numbers.
 - Memory-only lyrics are a hypothesis, chosen to avoid making the debt public and to avoid amounts being sung unclearly.
 - Consent (observed, phone call 2026-11-06): real names, trip details, photo and replies may appear in the public video.
 
