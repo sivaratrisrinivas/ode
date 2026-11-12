@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { GrowingField } from "./chrome.tsx";
 import { failureMessage, UNREACHABLE, Warnings } from "./messages.tsx";
 
 const MAX_LINE_LENGTH = 200;
@@ -63,20 +64,13 @@ function LineField({ label, line, target, onSaved }: { label: string; line: Line
 
   const flagged = line.problems.length > 0;
   return (
-    <div style={{ marginBottom: "0.5rem" }}>
+    <div className="ode-lyric">
       <label>
-        <span style={{ fontSize: "0.85rem", color: "#555" }}>{label}</span>
-        <input
-          value={text}
-          maxLength={MAX_LINE_LENGTH}
-          aria-invalid={flagged}
-          onChange={(e) => setText(e.target.value)}
-          onBlur={() => void save()}
-          style={{ width: "100%", boxSizing: "border-box", borderColor: flagged ? "#b00020" : undefined }}
-        />
+        <span>{label}</span>
+        <GrowingField value={text} maxLength={MAX_LINE_LENGTH} aria-invalid={flagged} onChange={setText} onBlur={() => void save()} />
       </label>
       <Warnings messages={line.problems} />
-      {problem !== null && <p role="alert" style={{ color: "#b00020", margin: "0.25rem 0 0" }}>{problem}</p>}
+      {problem !== null && <p role="alert" className="ode-problem">{problem}</p>}
     </div>
   );
 }
@@ -140,21 +134,21 @@ export function LyricsPreview({ onFlagged }: { onFlagged: (count: number | null)
   const written = load.status === "ready" && load.lyrics.hook !== null && load.lyrics.chorus !== null ? { ...load.lyrics, hook: load.lyrics.hook, chorus: load.lyrics.chorus } : undefined;
 
   return (
-    <section>
+    <section className="ode-card ode-step">
       <h2>Lyrics</h2>
-      {load.status === "loading" && <p>Loading…</p>}
+      {load.status === "loading" && <p className="ode-loading">Loading…</p>}
       {load.status === "error" && <p>Couldn’t load your lyrics. Try again in a moment.</p>}
       {load.status === "ready" && (
-        <button onClick={() => void write()} disabled={writing}>
+        <button className={written ? undefined : "primary"} onClick={() => void write()} disabled={writing}>
           {writing ? "Writing your lyrics…" : written ? "Write new lyrics" : "Write the lyrics"}
         </button>
       )}
-      {writeError !== null && <p role="alert" style={{ color: "#b00020" }}>{writeError}</p>}
+      {writeError !== null && <p role="alert" className="ode-problem">{writeError}</p>}
 
       {written && (
         <div key={generation}>
           {written.verses.map((verse) => (
-            <fieldset key={verse.friend} style={{ marginTop: "1rem" }}>
+            <fieldset key={verse.friend} className="ode-lyrics-group">
               <legend>{verse.friend}</legend>
               {verse.lines.map((line, index) => {
                 const target: Target = { kind: "verse", friend: verse.friend, index };
@@ -170,7 +164,7 @@ export function LyricsPreview({ onFlagged }: { onFlagged: (count: number | null)
               })}
             </fieldset>
           ))}
-          <fieldset style={{ marginTop: "1rem" }}>
+          <fieldset className="ode-lyrics-group">
             <legend>Hook and chorus</legend>
             <LineField label="Hook, between the verses" line={written.hook} target={{ kind: "hook" }} onSaved={(line) => saved({ kind: "hook" }, line)} />
             <LineField label="Chorus, at the end" line={written.chorus} target={{ kind: "chorus" }} onSaved={(line) => saved({ kind: "chorus" }, line)} />

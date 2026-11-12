@@ -1,0 +1,343 @@
+/*
+ * The look of every screen: a paper-and-ink mixtape. One home for the colours, type and shapes; components name a class
+ * and carry no styling of their own, except a number computed at run time (a meter's width, a reel's size).
+ * Nothing here changes a word the page shows: no text-transform, and pseudo-element content is only decoration.
+ */
+
+:root {
+  --paper: #f2ebdc;
+  --paper-deep: #e8dec9;
+  --card: #fcf9f1;
+  --ink: #1e1a15;
+  --ink-soft: #4b443a;
+  --muted: #6d6456;
+  --tape: #ffcc2e;
+  --tape-pale: #fff0b8;
+  --tape-hover: #ffd95c;
+  --tape-brown: #5a3d24;
+  --coral: #e4533a;
+  --ok: #0fb865;
+  --ok-pale: #d8f5e5;
+  --warn: #b3261e;
+  --warn-pale: #fdebe8;
+  --note: #8a4b00;
+  --note-pale: #fff3dc;
+  --black: #000000;
+  --white: #ffffff;
+  --placeholder: #a39a8a;
+  --window-edge: #3b342b;
+  --unlock: #00c853;
+  --unlock-bright: #00e676;
+  --unlock-fade: #fff3c4;
+  --drop: #ffd600;
+  --avatar-salmon: #ffb7a6;
+  --avatar-mint: #b7e3d3;
+  --display: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, "DejaVu Serif", serif;
+  --body: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --radius: 14px;
+  --edge: 2px solid var(--ink);
+  --lift: 4px 4px 0 var(--ink);
+  color-scheme: light;
+}
+
+* { box-sizing: border-box; }
+
+html { background: var(--paper); }
+
+body {
+  margin: 0;
+  color: var(--ink);
+  font-family: var(--body);
+  font-size: 16px;
+  line-height: 1.5;
+  background-color: var(--paper);
+  background-image: radial-gradient(color-mix(in srgb, var(--ink) 9%, transparent) 1px, transparent 1.2px);
+  background-size: 20px 20px;
+  -webkit-text-size-adjust: 100%;
+}
+
+h1, h2, h3 { font-family: var(--display); line-height: 1.12; margin: 0; letter-spacing: -0.01em; }
+h1 { font-size: clamp(1.9rem, 6vw, 2.6rem); }
+h2 { font-size: 1.5rem; }
+p { margin: 0.5rem 0; }
+a { color: var(--ink); text-decoration-color: var(--coral); text-decoration-thickness: 2px; text-underline-offset: 3px; }
+a:hover { background: var(--tape-pale); }
+small { color: var(--muted); }
+
+:focus-visible { outline: 3px solid var(--coral); outline-offset: 2px; }
+
+/* ---------- Page frame ---------- */
+
+.ode-page { max-width: 720px; margin: 0 auto; padding: 22px 16px 72px; }
+.ode-page > * + * { margin-top: 20px; }
+
+.ode-brand { display: flex; align-items: center; gap: 10px; margin: 0; font-family: var(--display); font-size: 1.9rem; font-weight: 800; letter-spacing: -0.03em; line-height: 1; }
+.ode-brand svg { width: 40px; height: 30px; flex: none; }
+.ode-brand-small { font-size: 1.25rem; }
+.ode-brand-small svg { width: 30px; height: 22px; }
+a.ode-brand { text-decoration: none; width: fit-content; }
+a.ode-brand:hover { background: none; }
+
+.ode-title { margin-top: 14px; }
+.ode-sub { color: var(--muted); font-family: var(--mono); font-size: 0.85rem; margin: 6px 0 0; }
+
+/* ---------- Cards, steps, fields ---------- */
+
+.ode-card { background: var(--card); border: var(--edge); border-radius: var(--radius); box-shadow: var(--lift); padding: 18px; }
+.ode-card > h2, .ode-step > h2 { margin-bottom: 12px; }
+
+.ode-flow { counter-reset: step; }
+.ode-step > h2 { display: flex; align-items: center; gap: 10px; }
+.ode-step > h2::before {
+  counter-increment: step;
+  content: counter(step);
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border: var(--edge);
+  border-radius: 50%;
+  background: var(--tape);
+  font: 800 0.95rem/1 var(--mono);
+}
+
+.ode-label { display: block; font-weight: 700; margin-bottom: 6px; }
+.ode-hint { color: var(--muted); font-size: 0.875rem; }
+
+input, textarea, select {
+  font: inherit;
+  color: var(--ink);
+  background: var(--white);
+  border: var(--edge);
+  border-radius: 10px;
+  padding: 8px 11px;
+  min-width: 0;
+}
+input::placeholder, textarea::placeholder { color: var(--placeholder); }
+input:focus, textarea:focus { outline: 3px solid var(--tape); outline-offset: 0; }
+input[aria-invalid="true"] { border-color: var(--warn); background: var(--warn-pale); }
+textarea { width: 100%; resize: vertical; line-height: 1.45; }
+/* A one-line field that grows to hold what is typed, so a long line wraps instead of being cut off at the edge. */
+textarea.ode-growing { resize: none; overflow: hidden; field-sizing: content; }
+
+button {
+  font: inherit;
+  font-weight: 700;
+  color: var(--ink);
+  background: var(--card);
+  border: var(--edge);
+  border-radius: 10px;
+  padding: 8px 14px;
+  cursor: pointer;
+  box-shadow: 2px 2px 0 var(--ink);
+  transition: transform 80ms, box-shadow 80ms, background 120ms;
+}
+button:hover:not(:disabled) { background: var(--tape-pale); }
+button:active:not(:disabled) { transform: translate(2px, 2px); box-shadow: 0 0 0 var(--ink); }
+button:disabled { opacity: 0.5; cursor: not-allowed; box-shadow: none; }
+button.primary { background: var(--tape); box-shadow: 3px 3px 0 var(--ink); }
+button.primary:hover:not(:disabled) { background: var(--tape-hover); }
+button.primary:active:not(:disabled) { transform: translate(3px, 3px); box-shadow: 0 0 0 var(--ink); }
+
+.ode-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 12px; }
+
+.ode-problem { color: var(--warn); font-weight: 600; margin: 8px 0 0; }
+.ode-notice { background: var(--note-pale); border: var(--edge); border-radius: 10px; padding: 10px 14px; margin: 0; }
+.ode-warnings { list-style: none; margin: 6px 0 0; padding: 0; color: var(--note); font-size: 0.9rem; }
+.ode-warnings li { position: relative; padding-left: 22px; }
+.ode-warnings li::before { content: "!"; position: absolute; left: 0; top: 2px; display: grid; place-items: center; width: 15px; height: 15px; border-radius: 50%; background: var(--note); color: var(--white); font: 800 0.7rem/1 var(--mono); }
+
+.ode-loading { color: var(--muted); font-family: var(--mono); }
+
+/* ---------- Ledger ---------- */
+
+.ode-ledger { list-style: none; margin: 0; padding: 0; display: grid; gap: 14px; }
+.ode-ledger-row { display: grid; grid-template-columns: 44px 1fr; gap: 6px 14px; padding-top: 14px; border-top: 2px dashed var(--paper-deep); }
+.ode-ledger-row:first-child { padding-top: 0; border-top: 0; }
+.ode-avatar { display: grid; place-items: center; width: 44px; height: 44px; border: var(--edge); border-radius: 50%; background: var(--tape); font: 800 1.2rem/1 var(--display); }
+.ode-ledger-row:nth-child(3n+2) .ode-avatar { background: var(--avatar-salmon); }
+.ode-ledger-row:nth-child(3n+3) .ode-avatar { background: var(--avatar-mint); }
+.ode-ledger-body { min-width: 0; }
+.ode-ledger-name { font-family: var(--display); font-size: 1.2rem; font-weight: 800; }
+.ode-ledger-fields { display: grid; grid-template-columns: 8.5rem 1fr; gap: 10px; margin-top: 6px; }
+.ode-ledger-fields label { display: grid; gap: 4px; font-size: 0.85rem; color: var(--muted); font-weight: 600; }
+.ode-ledger-fields :is(input, textarea) { width: 100%; color: var(--ink); font-size: 1rem; font-weight: 400; }
+.ode-ledger-fields .ode-money-input { font-family: var(--mono); }
+
+/* ---------- Lyrics ---------- */
+
+.ode-lyrics-group { margin: 16px 0 0; padding: 14px 14px 6px; border: var(--edge); border-radius: 12px; background: var(--white); }
+.ode-lyrics-group legend { padding: 2px 12px; border: var(--edge); border-radius: 999px; background: var(--tape-pale); font-weight: 800; }
+.ode-lyric { margin-bottom: 10px; }
+.ode-lyric label { display: grid; gap: 3px; }
+.ode-lyric label span { font-family: var(--mono); font-size: 0.78rem; color: var(--muted); }
+.ode-lyric textarea { width: 100%; }
+
+/* ---------- Making the Ode ---------- */
+
+.ode-steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+.ode-steps li { display: flex; align-items: center; gap: 12px; color: var(--muted); font-weight: 600; }
+.ode-steps li::before { content: ""; flex: none; width: 22px; height: 22px; border: var(--edge); border-radius: 50%; background: var(--card); }
+.ode-steps li[aria-current="step"] { color: var(--ink); font-weight: 800; }
+.ode-steps li[aria-current="step"]::before { border-color: var(--ink) var(--ink) var(--ink) var(--tape); background: var(--tape-pale); animation: ode-spin 0.9s linear infinite; }
+.ode-steps li[data-done]::before { background: var(--ok) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='M5 10.5l3.2 3.2L15 6.8' fill='none' stroke='white' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 100% no-repeat; }
+.ode-steps li[data-done] { color: var(--ink-soft); }
+@keyframes ode-spin { to { transform: rotate(360deg); } }
+
+.ode-release { display: grid; gap: 4px; }
+.ode-release label { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; font-weight: 700; }
+.ode-release input[type="date"] { font-family: var(--mono); }
+
+/* ---------- The cassette page ---------- */
+
+.ode-cassette { display: grid; gap: 16px; }
+.ode-cassette-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
+.ode-cassette-head h2 { font-size: 1.9rem; }
+
+.ode-voice { margin: 0; display: inline-flex; align-items: center; gap: 8px; padding: 3px 12px 3px 8px; border: var(--edge); border-radius: 999px; background: var(--ink); color: var(--tape); font-family: var(--display); font-style: italic; font-weight: 700; font-size: 1rem; }
+.ode-voice::before { content: ""; width: 10px; height: 10px; border-radius: 50%; background: var(--coral); box-shadow: 0 0 0 3px color-mix(in srgb, var(--coral) 35%, transparent); }
+
+.ode-banner { margin: 0; padding: 12px 16px; border: 4px solid var(--black); border-radius: 14px; color: var(--black); font-family: var(--display); font-size: 1.5rem; font-weight: 800; line-height: 1.2; text-align: center; box-shadow: 5px 5px 0 var(--black); }
+.ode-banner--unlock { background: var(--unlock); display: flex; align-items: center; justify-content: center; gap: 10px; }
+.ode-banner--unlock svg { width: 1.5rem; height: 1.5rem; flex: none; }
+.ode-banner--drop { background: var(--drop); }
+
+.ode-countdown { margin: 0; justify-self: start; display: inline-flex; align-items: center; gap: 10px; padding: 6px 14px; border: var(--edge); border-radius: 999px; background: var(--card); font-family: var(--mono); font-size: 0.9rem; font-weight: 700; }
+.ode-countdown::before { content: ""; width: 10px; height: 10px; border-radius: 50%; background: var(--tape); border: var(--edge); }
+.ode-countdown--delayed { background: var(--note-pale); border-color: var(--note); color: var(--note); }
+.ode-countdown--delayed::before { background: var(--coral); }
+
+/* The deck: a cassette's shell, label and window, with the player under it. */
+.ode-deck { background: var(--ink); border-radius: 22px; padding: 14px 14px 16px; box-shadow: 6px 6px 0 color-mix(in srgb, var(--ink) 28%, transparent); }
+.ode-deck-label { position: relative; display: grid; grid-template-columns: 1fr auto; align-items: end; gap: 4px 16px; padding: 12px 16px 10px; background: var(--card); border-radius: 10px; border-bottom: 8px solid var(--tape); background-image: repeating-linear-gradient(transparent 0 25px, color-mix(in srgb, var(--ink) 12%, transparent) 25px 26px); }
+.ode-deck-trip { margin: 0; font-family: var(--display); font-size: 1.5rem; font-weight: 800; font-style: italic; line-height: 1.15; overflow-wrap: anywhere; }
+.ode-deck-side { margin: 0; padding: 0 8px; border: var(--edge); border-radius: 6px; font: 800 0.85rem/1.6 var(--mono); background: var(--card); }
+.ode-deck-window { margin: 12px 14px 0; padding: 6px 10px; border-radius: 999px; background: var(--black); border: 2px solid var(--window-edge); }
+.ode-reels { display: block; width: 100%; height: auto; max-height: 92px; }
+.ode-reel-spin { transform-box: fill-box; transform-origin: center; }
+.ode-deck[data-playing] .ode-reel-spin { animation: ode-spin 2.4s linear infinite; }
+.ode-deck-tray { margin-top: 12px; padding: 8px; border-radius: 12px; background: var(--paper-deep); }
+.ode-deck audio { display: block; width: 100%; height: 44px; border-radius: 999px; }
+
+.ode-tracks { display: grid; gap: 14px; }
+.ode-intro { display: block; width: 100%; text-align: left; }
+.ode-verse { background: var(--card); border: var(--edge); border-radius: var(--radius); padding: 14px 14px 10px; box-shadow: var(--lift); }
+.ode-verse-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 2px 14px; }
+.ode-verse-name { font-family: var(--display); font-size: 1.35rem; font-weight: 800; }
+.ode-verse-link { margin: 0; font-family: var(--mono); font-size: 0.82rem; }
+
+/* A line is a button that jumps to where it is sung. */
+.ode-line { display: flex; align-items: baseline; gap: 10px; width: 100%; margin: 2px 0; padding: 7px 10px; text-align: left; font-weight: 400; background: transparent; border: 0; border-left: 5px solid transparent; border-radius: 8px; box-shadow: none; transition: background 150ms; }
+.ode-line:hover:not(:disabled) { background: var(--tape-pale); }
+.ode-line:active:not(:disabled) { transform: none; }
+.ode-line[aria-current="true"] { background: var(--tape-pale); border-left-color: var(--coral); font-weight: 700; }
+.ode-line[aria-current="true"]:hover:not(:disabled) { background: var(--tape-pale); }
+.ode-line-text { min-width: 0; overflow-wrap: anywhere; }
+.ode-line[data-locked] { cursor: help; }
+.ode-line[data-locked] .ode-line-text { filter: blur(5px); user-select: none; }
+.ode-line[data-locked]::after { content: ""; flex: none; align-self: center; width: 16px; height: 16px; margin-left: auto; background: var(--muted); -webkit-mask: var(--lock) center / contain no-repeat; mask: var(--lock) center / contain no-repeat; --lock: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='M6 9V6.5a4 4 0 018 0V9h1.5a1 1 0 011 1v7a1 1 0 01-1 1h-11a1 1 0 01-1-1v-7a1 1 0 011-1H6zm2 0h4V6.5a2 2 0 00-4 0V9z'/%3E%3C/svg%3E"); }
+.ode-tag { flex: none; padding: 0 8px; border: 2px solid var(--ink); border-radius: 6px; background: var(--card); font: 700 0.75rem/1.55 var(--mono); }
+.ode-line--chorus { padding: 12px 12px; border: var(--edge); border-left-width: 5px; border-radius: 12px; background: var(--tape-pale); font-family: var(--display); font-size: 1.15rem; font-weight: 700; box-shadow: var(--lift); }
+.ode-line--chorus .ode-tag { background: var(--tape); }
+.ode-line--chorus[data-locked] { background: repeating-linear-gradient(135deg, var(--card) 0 10px, var(--paper-deep) 10px 20px); }
+.ode-line--hook { font-style: italic; color: var(--ink-soft); }
+.ode-line--intro .ode-line-text { font-family: var(--mono); font-size: 0.85rem; color: var(--muted); }
+
+/* The unlock moment, drawn loud enough to survive video compression: a line that flares from blurred to clear in
+   saturated colour. Under reduced motion the glow stays, without the movement. */
+@keyframes ode-unlock-line { 0% { background: var(--unlock); transform: scale(1.06); box-shadow: 0 0 0 0 var(--unlock); } 35% { background: var(--unlock-bright); transform: scale(1.06); box-shadow: 0 0 28px 10px var(--unlock-bright); } 100% { background: var(--unlock-fade); transform: scale(1); box-shadow: 0 0 0 0 color-mix(in srgb, var(--unlock-bright) 0%, transparent); } }
+@keyframes ode-unlock-unblur { from { filter: blur(5px); } to { filter: blur(0); } }
+@keyframes ode-unlock-banner { 0% { transform: translateY(-12px) scale(0.9); opacity: 0; } 15% { transform: translateY(0) scale(1.04); opacity: 1; } 100% { transform: translateY(0) scale(1); opacity: 1; } }
+.ode-unlock-line { animation: ode-unlock-line 2.4s ease-out both; }
+.ode-unlock-text { animation: ode-unlock-unblur 0.6s ease-out both; }
+.ode-unlock-banner { animation: ode-unlock-banner 0.5s ease-out both; }
+@media (prefers-reduced-motion: reduce) {
+  .ode-unlock-line { animation: none; background: var(--unlock-bright); }
+  .ode-unlock-text, .ode-unlock-banner { animation: none; }
+  .ode-deck[data-playing] .ode-reel-spin, .ode-steps li[aria-current="step"]::before { animation: none; }
+}
+
+/* ---------- Paying a friend ---------- */
+
+.ode-pay { margin: 10px 0 8px; padding: 10px 12px 12px; border: 2px dashed var(--ink-soft); border-radius: 12px; background: var(--paper); }
+.ode-pay-line { margin: 0 0 6px; font-family: var(--mono); font-size: 0.85rem; font-weight: 600; }
+.ode-meter { height: 12px; margin-bottom: 10px; border: var(--edge); border-radius: 999px; background: var(--white); overflow: hidden; }
+.ode-meter > i { display: block; height: 100%; background: var(--ok); transition: width 400ms ease-out; }
+.ode-pay-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
+.ode-pay-row label { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; font-weight: 700; }
+.ode-pay-row input { width: 6.5rem; font-family: var(--mono); }
+.ode-pay-paypal { max-width: 260px; margin-top: 10px; }
+
+/* ---------- A friend's page ---------- */
+
+.ode-money { display: grid; gap: 10px; }
+.ode-money-stats { display: flex; flex-wrap: wrap; gap: 8px 10px; margin: 0; }
+.ode-stat { padding: 6px 12px; border: var(--edge); border-radius: 10px; background: var(--white); font-weight: 600; }
+.ode-stat strong { font-family: var(--display); font-size: 1.25rem; margin-left: 2px; }
+.ode-stat--ok { background: var(--ok-pale); }
+.ode-money .ode-meter { margin: 0; }
+
+.ode-share { display: grid; gap: 10px; }
+.ode-share-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
+.ode-share-row input { flex: 1 1 14rem; font-family: var(--mono); font-size: 0.85rem; }
+
+/* ---------- A verse share's page ---------- */
+
+.ode-share-card { display: grid; gap: 14px; }
+.ode-play { display: inline-flex; align-items: center; justify-content: center; gap: 12px; width: 100%; padding: 14px 20px; border-radius: 999px; font-size: 1.15rem; box-shadow: 4px 4px 0 var(--ink); }
+.ode-play svg { width: 22px; height: 22px; flex: none; }
+.ode-jcard { padding: 6px 4px 0; display: grid; gap: 10px; }
+.ode-jcard-verse { display: grid; gap: 2px; padding: 12px 14px; border-left: 5px solid var(--coral); background: var(--white); border-radius: 0 10px 10px 0; }
+.ode-jcard-verse strong { font-family: var(--display); font-size: 1.25rem; }
+.ode-jcard-verse p { margin: 2px 0; font-size: 1.1rem; }
+.ode-jcard-part { margin: 0; padding: 4px 4px; }
+.ode-jcard-part .ode-tag { margin-right: 8px; }
+.ode-foot { margin-top: 28px; text-align: center; font-family: var(--mono); font-size: 0.82rem; color: var(--muted); }
+
+/* ---------- Split screen ---------- */
+
+.ode-split { display: grid; grid-template-columns: 1fr; gap: 14px; padding: 14px; min-height: 100vh; }
+.ode-split-head { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 20px; }
+.ode-split-brand { display: grid; gap: 4px; }
+.ode-tagline { margin: 0; color: var(--ink-soft); font-family: var(--display); font-style: italic; font-size: 1.05rem; }
+.ode-split-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.ode-split-tag { padding: 3px 12px; border: var(--edge); border-radius: 999px; background: var(--ink); color: var(--tape); font: 700 0.85rem/1.4 var(--mono); }
+.ode-split-pane { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.ode-split-caption { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; min-height: 36px; font-family: var(--mono); font-size: 0.85rem; font-weight: 700; color: var(--ink-soft); }
+.ode-split-caption::before { content: ""; width: 10px; height: 10px; border: var(--edge); border-radius: 50%; background: var(--coral); }
+.ode-split-picker { display: flex; flex-wrap: wrap; gap: 6px; margin-left: auto; }
+.ode-split-picker button { padding: 3px 12px; border-radius: 999px; font-size: 0.9rem; box-shadow: none; }
+.ode-split-picker button[aria-pressed="true"] { background: var(--ink); color: var(--tape); }
+.ode-split iframe { display: block; width: 100%; height: 88vh; border: var(--edge); border-radius: 16px; background: var(--paper); box-shadow: 6px 6px 0 var(--ink); }
+.ode-split-empty { margin: 0; padding: 16px; border: 2px dashed var(--ink-soft); border-radius: 12px; color: var(--ink-soft); }
+
+@media (min-width: 800px) {
+  .ode-split { grid-template-columns: 1fr 1fr; gap: 14px 22px; padding: 16px 22px 22px; }
+  .ode-split iframe { height: calc(100vh - 150px); min-height: 520px; }
+}
+
+@media (max-width: 520px) {
+  .ode-page { padding-top: 16px; }
+  .ode-card { padding: 14px; }
+  .ode-ledger-row { grid-template-columns: 1fr; }
+  .ode-avatar { display: none; }
+  .ode-ledger-fields { grid-template-columns: 1fr; }
+  .ode-banner { font-size: 1.25rem; }
+  .ode-deck-trip { font-size: 1.25rem; }
+  .ode-split { padding: 10px; }
+  .ode-split iframe { box-shadow: 4px 4px 0 var(--ink); }
+}
+
+/* ---------- The payer's page: notes and ledger fold under the made Ode ---------- */
+
+.ode-flow, .ode-studio { display: grid; gap: 20px; }
+.ode-setup > section + section, .ode-setup[data-ready] > section:first-of-type { margin-top: 20px; }
+.ode-setup > summary { cursor: pointer; padding: 10px 16px; border: var(--edge); border-radius: 10px; background: var(--card); font-weight: 800; list-style-position: inside; }
+.ode-setup:not([data-ready]) > summary { display: none; }
+.ode-setup[open][data-ready] > summary { margin-bottom: 0; }
+
+@media (max-width: 520px) {
+  .ode-split-tools button { padding: 6px 10px; font-size: 0.9rem; }
+}

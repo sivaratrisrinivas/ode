@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactElement } from "react";
+import { Brand } from "./chrome.tsx";
 import { failureMessage, UNREACHABLE } from "./messages.tsx";
 
 /** One friend the right pane can show, and the page their private link opens. */
@@ -26,18 +27,6 @@ function friendLinks(ode: OdeAnswer): FriendLink[] {
     section.kind === "verse" && section.friend !== undefined && typeof section.friendViewPath === "string" ? [{ friend: section.friend, path: section.friendViewPath }] : [],
   );
 }
-
-/** The bar above the panes: the visitor's own copy of the demo, with the way to start it again from unpaid or to make their own Ode. */
-const BAR = { display: "flex", gap: "0.75rem", alignItems: "center", flexWrap: "wrap", gridColumn: "1 / -1" } as const;
-
-/** Two panes side by side when there is room, stacked on a phone. */
-const CSS = `
-.ode-split { display: grid; grid-template-columns: 1fr; gap: 0.5rem; font-family: system-ui, sans-serif; }
-.ode-split iframe { width: 100%; height: 90vh; border: 1px solid #ccc; border-radius: 6px; background: #fff; }
-.ode-split-friend { display: flex; flex-direction: column; gap: 0.5rem; min-width: 0; }
-.ode-split-pane { min-width: 0; }
-@media (min-width: 800px) { .ode-split { grid-template-columns: 1fr 1fr; } .ode-split iframe { height: calc(100vh - 3rem); } }
-`;
 
 /**
  * The whole arc on one page: the payer's page on the left, and on the right a friend's own view with a picker for which
@@ -114,44 +103,51 @@ export function SplitScreen(): ReactElement {
   const shown = links.find((link) => link.friend === chosen) ?? links[0];
 
   return (
-    <main className="ode-split" style={{ padding: "0.5rem" }}>
-      <style>{CSS}</style>
-      <div style={BAR}>
-        <button onClick={() => void resetDemo()} disabled={resetting}>
-          Reset demo
-        </button>
-        {resetError !== null && <span role="alert" style={{ color: "#b00020" }}>{resetError}</span>}
-        {mine ? (
-          <>
-            <span>Your own Ode</span>
+    <main className="ode-split">
+      <header className="ode-split-head">
+        <div className="ode-split-brand">
+          <Brand />
+          <p className="ode-tagline">Pay your friends back in song.</p>
+        </div>
+        <div className="ode-split-tools">
+          {mine && <span className="ode-split-tag">Your own Ode</span>}
+          {mine ? (
             <button onClick={() => void judgeOde("DELETE")} disabled={judgeBusy}>
               Back to the Seeded Ode
             </button>
-          </>
-        ) : (
-          <button onClick={() => void judgeOde("POST")} disabled={judgeBusy}>
-            Make my own Ode
+          ) : (
+            <button className="primary" onClick={() => void judgeOde("POST")} disabled={judgeBusy}>
+              Make my own Ode
+            </button>
+          )}
+          <button onClick={() => void resetDemo()} disabled={resetting}>
+            Reset demo
           </button>
-        )}
-        {judgeError !== null && <span role="alert" style={{ color: "#b00020" }}>{judgeError}</span>}
-      </div>
+          {resetError !== null && <span role="alert" className="ode-problem">{resetError}</span>}
+          {judgeError !== null && <span role="alert" className="ode-problem">{judgeError}</span>}
+        </div>
+      </header>
       <section className="ode-split-pane" aria-label="You, the payer">
+        <p className="ode-split-caption">You, the payer</p>
         <iframe key={copy} title="Payer" src="/?quiet" allow="autoplay" />
       </section>
-      <section className="ode-split-friend" aria-label="A friend's view">
-        {shown === undefined ? (
-          <p>Make the Ode on the left, and a friend’s view appears here.</p>
-        ) : (
-          <>
-            <div role="group" aria-label="Friend" style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+      <section className="ode-split-pane" aria-label="A friend's view">
+        <div className="ode-split-caption">
+          A friend’s view
+          {shown !== undefined && (
+            <div role="group" aria-label="Friend" className="ode-split-picker">
               {links.map((link) => (
-                <button key={link.friend} aria-pressed={link.friend === shown.friend} onClick={() => setChosen(link.friend)} style={{ fontWeight: link.friend === shown.friend ? 700 : 400 }}>
+                <button key={link.friend} aria-pressed={link.friend === shown.friend} onClick={() => setChosen(link.friend)}>
                   {link.friend}
                 </button>
               ))}
             </div>
-            <iframe key={`${copy}:${shown.path}`} title="Friend view" src={shown.path} allow="autoplay" />
-          </>
+          )}
+        </div>
+        {shown === undefined ? (
+          <p className="ode-split-empty">Make the Ode on the left, and a friend’s view appears here.</p>
+        ) : (
+          <iframe key={`${copy}:${shown.path}`} title="Friend view" src={shown.path} allow="autoplay" />
         )}
       </section>
     </main>

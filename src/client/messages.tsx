@@ -14,7 +14,7 @@ export async function failureMessage(res: Response): Promise<string> {
 export function Warnings({ messages }: { messages: readonly string[] }): ReactElement | null {
   if (messages.length === 0) return null;
   return (
-    <ul style={{ color: "#8a4b00", margin: "0.25rem 0 0", paddingLeft: "1.25rem" }}>
+    <ul className="ode-warnings">
       {messages.map((message) => (
         <li key={message}>{message}</li>
       ))}

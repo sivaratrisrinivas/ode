@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactElement } from "react";
+import { Brand, Deck } from "./chrome.tsx";
 import { UNREACHABLE } from "./messages.tsx";
 
 /** One part of a verse share, as the API lists it: only what the friend may show. */
@@ -106,18 +107,16 @@ export function SharePage({ token }: { token: string }): ReactElement {
     if (playing === "plain") void plain.current?.play().catch(() => undefined);
   }, [playing]);
 
-  const main = { fontFamily: "system-ui, sans-serif", maxWidth: 640, margin: "3rem auto", padding: "0 1rem" } as const;
-
-  if (load.status === "loading") return <main style={main}><p>Loading…</p></main>;
+  if (load.status === "loading") return <main className="ode-page"><p className="ode-loading">Loading…</p></main>;
   if (load.status === "gone") {
     return (
-      <main style={main}>
-        <h1>Ode</h1>
-        <p>This link doesn’t work any more.</p>
+      <main className="ode-page">
+        <Brand as="h1" />
+        <p className="ode-card">This link doesn’t work any more.</p>
       </main>
     );
   }
-  if (load.status === "error") return <main style={main}><p>{UNREACHABLE}</p></main>;
+  if (load.status === "error") return <main className="ode-page"><p className="ode-card">{UNREACHABLE}</p></main>;
 
   const { view } = load;
 
@@ -141,39 +140,59 @@ export function SharePage({ token }: { token: string }): ReactElement {
     setPlaying("idle");
   }
 
+  const PlayIcon = (
+    <svg viewBox="0 0 20 20" aria-hidden="true">
+      <path d="M5 3.5v13l11-6.5z" fill="currentColor" />
+    </svg>
+  );
+  const StopIcon = (
+    <svg viewBox="0 0 20 20" aria-hidden="true">
+      <rect x="4.5" y="4.5" width="11" height="11" rx="1.5" fill="currentColor" />
+    </svg>
+  );
+
   return (
-    <main style={main}>
-      <h1>{view.title}</h1>
-      <div style={{ border: "2px solid #333", borderRadius: 12, padding: "1rem", background: "#faf7f0" }}>
-        {playing === "idle" ? (
-          <button onClick={() => void play()} style={{ font: "inherit", fontWeight: 700, padding: "0.5rem 1rem" }}>
-            Play {view.friend}’s verse
-          </button>
-        ) : (
-          <button onClick={pause} style={{ font: "inherit", fontWeight: 700, padding: "0.5rem 1rem" }}>
-            Stop
-          </button>
-        )}
-        {playing === "plain" && <audio ref={plain} controls src={view.audioUrl} onEnded={() => setPlaying("idle")} style={{ width: "100%", marginTop: "0.5rem" }} />}
-        {view.sections.map((section, index) => {
-          switch (section.kind) {
-            case "intro":
-              return <p key={index} style={{ color: "#555" }}>Intro</p>;
-            case "verse":
-              return (
-                <div key={index}>
-                  <strong>{section.friend}</strong>
-                  {section.lines.map((line) => (
-                    <p key={line} style={{ margin: "0.25rem 0" }}>{line}</p>
-                  ))}
-                </div>
-              );
-            case "hook":
-              return <p key={index}><span style={{ color: "#555", marginRight: "0.5rem" }}>Hook</span>{section.text}</p>;
-            case "chorus":
-              return <p key={index}><span style={{ color: "#555", marginRight: "0.5rem" }}>Chorus</span>{section.text}</p>;
-          }
-        })}
+    <main className="ode-page">
+      <header>
+        <Brand small href="/" />
+        <h1 className="ode-title">{view.title}</h1>
+      </header>
+      <div className="ode-share-card">
+        <Deck label={`${view.friend}’s verse`} progress={0.35} playing={playing !== "idle"}>
+          {playing === "idle" ? (
+            <button className="primary ode-play" onClick={() => void play()}>
+              {PlayIcon}
+              Play {view.friend}’s verse
+            </button>
+          ) : (
+            <button className="primary ode-play" onClick={pause}>
+              {StopIcon}
+              Stop
+            </button>
+          )}
+          {playing === "plain" && <audio ref={plain} controls src={view.audioUrl} onEnded={() => setPlaying("idle")} />}
+        </Deck>
+        <div className="ode-card ode-jcard">
+          {view.sections.map((section, index) => {
+            switch (section.kind) {
+              case "intro":
+                return <p key={index} className="ode-jcard-part ode-hint">Intro</p>;
+              case "verse":
+                return (
+                  <div key={index} className="ode-jcard-verse">
+                    <strong>{section.friend}</strong>
+                    {section.lines.map((line) => (
+                      <p key={line}>{line}</p>
+                    ))}
+                  </div>
+                );
+              case "hook":
+                return <p key={index} className="ode-jcard-part"><span className="ode-tag">Hook</span>{section.text}</p>;
+              case "chorus":
+                return <p key={index} className="ode-jcard-part"><span className="ode-tag">Chorus</span>{section.text}</p>;
+            }
+          })}
+        </div>
       </div>
     </main>
   );
