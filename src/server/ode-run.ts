@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { err, ok, type Result } from "./result.ts";
 
 /** The steps of making the Ode, in the order they run. */
@@ -49,6 +50,14 @@ export function parseRunId(input: unknown): Result<RunId, InvalidRunId> {
   if (typeof input !== "string" || !UUID.test(input)) return err(new InvalidRunId());
   // SAFETY: TypeScript cannot express the brand. The check above is the only way to get here, and callers cannot build a RunId otherwise.
   return ok(input as RunId);
+}
+
+/** A fresh run ID for each attempt to make the Ode. */
+export function newRunId(): RunId {
+  const run = parseRunId(randomUUID());
+  // Defect: randomUUID always returns a lower-case UUID.
+  if (run._tag === "err") throw run.error;
+  return run.value;
 }
 
 /**
