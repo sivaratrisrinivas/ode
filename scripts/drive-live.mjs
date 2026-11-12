@@ -41,7 +41,8 @@ try {
   page.on("console", (message) => message.type() === "error" && problems.push(message.text().slice(0, 160)));
   page.on("dialog", (dialog) => dialog.accept());
   await page.goto(`${base}/`, { waitUntil: "load", timeout: 60_000 });
-  await page.getByRole("button", { name: /Make my own Ode/ }).waitFor({ timeout: 30_000 });
+  // "Make my own Ode" is behind the landing page's "More"; the page is up once that is.
+  await page.locator("details.ode-menu > summary").waitFor({ timeout: 30_000 });
   assert.deepEqual(problems, [], "the page logged console errors on load");
   lap("page loads with no console errors");
 
@@ -49,6 +50,7 @@ try {
     console.log("read-only checks passed (add --spend to make an Ode and pay a friend).");
   } else {
     const notes = await readFile(new URL("../seed/notes.txt", import.meta.url), "utf8");
+    await page.locator("details.ode-menu > summary").click();
     await page.getByRole("button", { name: /Make my own Ode/ }).click();
     const frame = await (async () => {
       for (let tries = 0; tries < 20; tries++) {
