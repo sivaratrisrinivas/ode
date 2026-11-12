@@ -25,9 +25,11 @@ Open http://localhost:3000 (`PORT` changes it). State is in memory and ends with
 - Stop it with `kill $(lsof -ti :$PORT)`. A hook blocks `pkill -f` and `pgrep -f`, which match the shell running them.
 - `npm test` takes 2 to 7 minutes: run it in the background. Every run writes its failures to `.vitest/last.json`.
 
+The reliability runs (#16) use real keys and spend credits, so they are the one thing here that does not run with fakes. `npm run reliability -- --smoke` makes one 35 s clip and stops; `npm run reliability` makes 10 clips and one full Ode from `seed/notes.txt` in in-process Postgres, and writes `notes/reliability-<date>.md` and the recorded fallback in `seed/` (see `seed/README.md`). It needs `ANTHROPIC_API_KEY` and `ELEVENLABS_API_KEY` in `.env` (or run `node --env-file=<path to .env> scripts/reliability.ts` from a worktree) and stops after 3 failures in a row. `npm run seed:ode` builds the Seeded Ode into `DATABASE_URL`'s database (on Render, from the web service's Shell).
+
 ### Converting the Seeded Ode into the payer's voice (once, #35)
 
-`npm run seed:voice` converts the hosted Seeded Ode's stored audio and replaces it. It spends ElevenLabs credits (a stem split and a speech-to-speech pass of about 8 s each for a 35 s song), so run it once, after the Seeded Ode is made and its lines are as wanted. It does not run on Render (there is no ffmpeg there): run it on the payer's own machine against the hosted database.
+`npm run seed:voice` converts the hosted Seeded Ode's stored audio and replaces it. It spends ElevenLabs credits (a stem split and a speech-to-speech pass of about 8 s each for a 35 s song), so run it once, after the Seeded Ode is made (on the hosted site, or with `npm run seed:ode` above) and its lines are as wanted. It does not run on Render (there is no ffmpeg there): run it on the payer's own machine against the hosted database.
 
 1. Have Node 24 and `ffmpeg` on the PATH (`ffmpeg -version`; `FFMPEG_PATH` names it otherwise).
 2. In `.env`: `ELEVENLABS_API_KEY` and `ELEVENLABS_VOICE_ID` (the payer's cloned voice).

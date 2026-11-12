@@ -1,0 +1,215 @@
+{
+  "label": "RECORDING of a Seeded Ode build, not a live run. Label it as a recording wherever it is shown.",
+  "madeAt": "2026-11-12T00:07:41.834Z",
+  "source": "seed/notes.txt (invented placeholder notes)",
+  "trip": "Florida '25",
+  "friends": [
+    {
+      "name": "Tharun",
+      "amountOwedCents": 9750,
+      "insideJoke": "Drove the overnight stretch to Key West while everyone slept"
+    },
+    {
+      "name": "Vikram",
+      "amountOwedCents": 8250,
+      "insideJoke": "Got us lost, ending with key lime pie at a random pier"
+    },
+    {
+      "name": "Sahiti",
+      "amountOwedCents": 7750,
+      "insideJoke": "Screamed when the alligator came close to the airboat"
+    }
+  ],
+  "lyrics": {
+    "verses": [
+      {
+        "friend": "Tharun",
+        "lines": [
+          {
+            "text": "Tharun, you held the wheel while the whole car fell asleep",
+            "problems": []
+          },
+          {
+            "text": "Through the dark and the bridges, the long road south to Key West",
+            "problems": []
+          },
+          {
+            "text": "We woke to the ocean glowing and you were smiling still",
+            "problems": []
+          },
+          {
+            "text": "You carried us through the night, and we won't forget it, friend",
+            "problems": []
+          }
+        ]
+      },
+      {
+        "friend": "Vikram",
+        "lines": [
+          {
+            "text": "Vikram, you swore you knew the way, then the road just disappeared",
+            "problems": []
+          },
+          {
+            "text": "We wandered past the mangroves, laughing louder every mile",
+            "problems": []
+          },
+          {
+            "text": "Ended up on a random pier with key lime pie in hand",
+            "problems": []
+          },
+          {
+            "text": "Best wrong turn we ever took, you led us somewhere sweet",
+            "problems": []
+          }
+        ]
+      },
+      {
+        "friend": "Sahiti",
+        "lines": [
+          {
+            "text": "Sahiti, on the airboat, the swamp was calm and green",
+            "problems": []
+          },
+          {
+            "text": "Then that alligator drifted close and you let out a scream",
+            "problems": []
+          },
+          {
+            "text": "The whole boat burst out laughing, even the gator seemed to grin",
+            "problems": []
+          },
+          {
+            "text": "Your voice still echoes in the glades, we love you for that sound",
+            "problems": []
+          }
+        ]
+      }
+    ],
+    "hook": {
+      "text": "Thank you, friends, for carrying me along this ride",
+      "problems": []
+    },
+    "chorus": {
+      "text": "From the midnight road to the swamp and the pier, every mile was better with you here",
+      "problems": []
+    }
+  },
+  "durationMs": 102000,
+  "sections": [
+    {
+      "kind": "intro",
+      "startMs": 0,
+      "endMs": 6000
+    },
+    {
+      "kind": "verse",
+      "friend": "Tharun",
+      "lines": [
+        {
+          "text": "Tharun, you held the wheel while the whole car fell asleep",
+          "startMs": 6000,
+          "endMs": 11260
+        },
+        {
+          "text": "Through the dark and the bridges, the long road south to Key West",
+          "startMs": 11260,
+          "endMs": 16380
+        },
+        {
+          "text": "We woke to the ocean glowing and you were smiling still",
+          "startMs": 16380,
+          "endMs": 21010
+        },
+        {
+          "text": "You carried us through the night, and we won't forget it, friend",
+          "startMs": 21010,
+          "endMs": 26000
+        }
+      ],
+      "startMs": 6000,
+      "endMs": 26000
+    },
+    {
+      "kind": "hook",
+      "text": "Thank you, friends, for carrying me along this ride",
+      "startMs": 26000,
+      "endMs": 34000
+    },
+    {
+      "kind": "verse",
+      "friend": "Vikram",
+      "lines": [
+        {
+          "text": "Vikram, you swore you knew the way, then the road just disappeared",
+          "startMs": 34000,
+          "endMs": 40200
+        },
+        {
+          "text": "We wandered past the mangroves, laughing louder every mile",
+          "startMs": 40200,
+          "endMs": 45120
+        },
+        {
+          "text": "Ended up on a random pier with key lime pie in hand",
+          "startMs": 45120,
+          "endMs": 49480
+        },
+        {
+          "text": "Best wrong turn we ever took, you led us somewhere sweet",
+          "startMs": 49480,
+          "endMs": 54000
+        }
+      ],
+      "startMs": 34000,
+      "endMs": 54000
+    },
+    {
+      "kind": "hook",
+      "text": "Thank you, friends, for carrying me along this ride",
+      "startMs": 54000,
+      "endMs": 62000
+    },
+    {
+      "kind": "verse",
+      "friend": "Sahiti",
+      "lines": [
+        {
+          "text": "Sahiti, on the airboat, the swamp was calm and green",
+          "startMs": 62000,
+          "endMs": 67600
+        },
+        {
+          "text": "Then that alligator drifted close and you let out a scream",
+          "startMs": 67600,
+          "endMs": 72540
+        },
+        {
+          "text": "The whole boat burst out laughing, even the gator seemed to grin",
+          "startMs": 72540,
+          "endMs": 77000
+        },
+        {
+          "text": "Your voice still echoes in the glades, we love you for that sound",
+          "startMs": 77000,
+          "endMs": 82000
+        }
+      ],
+      "startMs": 62000,
+      "endMs": 82000
+    },
+    {
+      "kind": "hook",
+      "text": "Thank you, friends, for carrying me along this ride",
+      "startMs": 82000,
+      "endMs": 90000
+    },
+    {
+      "kind": "chorus",
+      "text": "From the midnight road to the swamp and the pier, every mile was better with you here",
+      "startMs": 90000,
+      "endMs": 102000
+    }
+  ],
+  "audio": "seeded-ode-fallback.mp3"
+}
