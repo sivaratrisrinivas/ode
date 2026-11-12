@@ -43,7 +43,7 @@ const dayIso = (offset) => new Date(fakeNow.getTime() + offset * 86_400_000).toI
 
 try {
   await page.goto(`http://localhost:${port}/payer`);
-  await page.locator("textarea").fill("Trip notes: Tharun paid for the car, 390 dollars, split four ways.");
+  await page.getByLabel("Your trip notes").fill("Trip notes: Tharun paid for the car, 390 dollars, split four ways.");
   await page.getByRole("button", { name: "Build the ledger" }).click();
   await page.getByRole("button", { name: "Write the lyrics" }).click();
   // The release date is required: the field starts with a date, and with it cleared the Ode cannot be made.
@@ -55,16 +55,23 @@ try {
   await releaseField.fill("");
   assert.equal(await makeButton.isDisabled(), true, "the Ode can be made with no release date");
   await releaseField.fill(dayIso(22));
+  // A long lyric line or inside joke wraps to a second line instead of being cut off at the field's edge.
+  await page.setViewportSize({ width: 390, height: 844 });
+  const cutOff = await page.evaluate(() =>
+    [...document.querySelectorAll(".ode-lyric :is(input, textarea), .ode-ledger-fields label:last-child :is(input, textarea)")].filter((field) => field.scrollWidth > field.clientWidth || field.scrollHeight > field.clientHeight).map((field) => field.value),
+  );
+  assert.deepEqual(cutOff, [], "text is cut off in a lyric or inside-joke field at 390 px");
+  await page.setViewportSize({ width: 900, height: 1400 });
   assert.equal(await makeButton.isDisabled(), false, "the Ode cannot be made once a release date is chosen");
   await makeButton.click();
   await page.getByText("Your Ode").waitFor({ timeout: 30_000 });
   assert.equal(await page.getByLabel("Release date").innerText(), "0 of 3 friends · 22 days to drop", "the payer's page does not show the countdown");
   // The made Ode comes first and the notes it was made from fold away under it, still one click from editing.
-  assert.equal(await page.locator("textarea").isVisible(), false, "the trip notes stay open above the made Ode");
+  assert.equal(await page.getByLabel("Your trip notes").isVisible(), false, "the trip notes stay open above the made Ode");
   const ahead = await page.evaluate(() => document.querySelector("section.ode-cassette")?.compareDocumentPosition(document.querySelector("details.ode-setup") ?? document.body));
   assert.ok((ahead ?? 0) & 4, "the cassette does not come before the notes and ledger");
   await page.getByText("Trip notes and ledger").click();
-  assert.equal(await page.locator("textarea").isVisible(), true, "the folded notes do not open");
+  assert.equal(await page.getByLabel("Your trip notes").isVisible(), true, "the folded notes do not open");
   // Every screen fits the phone: nothing makes the page scroll sideways.
   await page.setViewportSize({ width: 390, height: 844 });
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= 390), "the payer's page scrolls sideways at 390 px");
@@ -85,7 +92,11 @@ try {
   await friend.getByRole("status").waitFor();
   console.log(`friend's open tab showed the unlock after ${Date.now() - paidAt} ms:`, await friend.getByRole("status").innerText());
   console.log("friend sees:", await friend.getByLabel("Your money").innerText());
+  // $50 of the $97.50 owed: the repaid meter on the friend's page is half full (51%), on the payer's page too.
+  const meterWidth = (view) => view.locator(".ode-meter > i").first().evaluate((bar) => bar.style.width);
+  assert.equal(await meterWidth(friend), "51%", "the friend's repaid meter does not show $50 of $97.50");
   await page.getByRole("status").waitFor();
+  assert.equal(await meterWidth(page), "51%", "the payer's repaid meter does not show $50 of $97.50");
   console.log("banner:", await page.getByRole("status").innerText());
   await page.waitForTimeout(500);
   await page.screenshot({ path: screenshot });
@@ -102,6 +113,11 @@ try {
   assert.match(shareUrl, new RegExp(`^http://localhost:${port}/s/[0-9a-f]{64}$`), "the share link is not a /s/ link");
   assert.ok(!shareUrl.includes((link ?? "").replace("/f/", "")), "the share link carries the friend's private token");
   await friend.screenshot({ path: `share-button-${screenshot}` });
+  // Every screen fits the phone: neither the friend's page (with its share link showing) nor the share's page scrolls sideways.
+  const sideways = (view) => view.evaluate(() => document.documentElement.scrollWidth - 390);
+  await friend.setViewportSize({ width: 390, height: 844 });
+  assert.ok((await sideways(friend)) <= 0, "the friend's page scrolls sideways at 390 px");
+  await friend.setViewportSize({ width: 900, height: 1400 });
 
   const strangerContext = await browser.newContext({ viewport: { width: 900, height: 1000 } });
   const stranger = await strangerContext.newPage();
@@ -129,6 +145,9 @@ try {
   const playMs = Date.now() - playedAt;
   assert.ok(playMs < 5_000, `the share page took ${playMs} ms to start playing`);
   await stranger.screenshot({ path: `share-${screenshot}` });
+  await stranger.setViewportSize({ width: 390, height: 844 });
+  assert.ok((await sideways(stranger)) <= 0, "the share page scrolls sideways at 390 px");
+  await stranger.setViewportSize({ width: 900, height: 1000 });
 
   // What a chat app does: fetch the link without running any script, read the tags, fetch the image they name.
   const crawled = await (await stranger.request.get(shareUrl)).text();
@@ -318,7 +337,7 @@ try {
   assert.equal(await judge.getByRole("button", { name: "Back to the Seeded Ode" }).count(), 0, "a visitor starts on the Seeded Ode, not on their own");
   await judge.getByRole("button", { name: "Make my own Ode" }).click();
   await judge.getByText("Your own Ode").waitFor();
-  await judgeLeft.locator("textarea").fill(goaNotes);
+  await judgeLeft.getByLabel("Your trip notes").fill(goaNotes);
   await judgeLeft.getByRole("button", { name: "Build the ledger" }).click();
   await judgeLeft.getByText("Meera").first().waitFor();
   await judgeLeft.getByRole("button", { name: "Write the lyrics" }).click();

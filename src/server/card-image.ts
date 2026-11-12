@@ -5,17 +5,66 @@ import { GLYPH_HEIGHT, GLYPH_WIDTH, TERMINUS_GLYPHS_GZIP_BASE64 } from "./termin
 export const CARD_WIDTH = 1200;
 export const CARD_HEIGHT = 630;
 
-/** Palette indexes. */
+/**
+ * The card's colours as six hex characters, each under the name of the stylesheet token (`--card` in `ode.css`) it must equal.
+ * The card is drawn without CSS, so it cannot read the tokens; `test/palette.test.ts` fails when one drifts from its token.
+ */
+export const CARD_COLORS = {
+  card: "fcf9f1",
+  ink: "1e1a15",
+  tape: "ffcc2e",
+  "tape-brown": "5a3d24",
+  "paper-deep": "e8dec9",
+  coral: "e4533a",
+} as const;
+
+/** The PNG's palette, in the order of the indexes below. */
+const PALETTE_ORDER = ["card", "ink", "tape", "tape-brown", "paper-deep", "coral"] as const satisfies readonly (keyof typeof CARD_COLORS)[];
+const PALETTE = Uint8Array.from(PALETTE_ORDER.flatMap((name) => [0, 2, 4].map((start) => Number.parseInt(CARD_COLORS[name].slice(start, start + 2), 16))));
+
+/** Palette indexes: the position of each colour in `PALETTE_ORDER`. */
 const PAPER = 0;
 const INK = 1;
 const TAPE = 2;
 const TAPE_BROWN = 3;
 const WINDOW = 4;
 const CORAL = 5;
-const PALETTE = Uint8Array.from([0xfa, 0xf7, 0xf0, 0x22, 0x22, 0x22, 0xff, 0xd6, 0x00, 0x5a, 0x3d, 0x24, 0xe8, 0xde, 0xc9, 0xe4, 0x53, 0x3a]);
 
 /** Space kept clear on each side of the text. */
 const MARGIN = 80;
+
+/** The card's frame: the ink border's width, the tape band along the top and the ink rule under it. */
+const BORDER = 16;
+const BAND_HEIGHT = 56;
+const RULE_HEIGHT = 8;
+
+/** Where the headline starts from the top, and the space between it and the subline. */
+const HEADLINE_TOP = 150;
+const HEADLINE_GAP = 40;
+
+/** The cassette's shell, centred across the card: its top edge, size and corner radius. */
+const SHELL_TOP = 392;
+const SHELL_WIDTH = 520;
+const SHELL_HEIGHT = 200;
+const SHELL_RADIUS = 26;
+
+/** The paper label on the shell: its inset from the shell's sides, top edge, size and corner radius, the tape stripe along its foot and the coral tab at its corner. */
+const LABEL_INSET = 24;
+const LABEL_TOP = 408;
+const LABEL_HEIGHT = 58;
+const LABEL_RADIUS = 10;
+const STRIPE_HEIGHT = 10;
+const TAB_WIDTH = 14;
+
+/** The window under the label (its inset from the shell's sides, top edge and height; its ends are round) and the two reels in it: their centre line and each side's distance from the card's middle, and the radii of the tape pack, the hub and the spindle. */
+const WINDOW_INSET = 40;
+const WINDOW_TOP = 482;
+const WINDOW_HEIGHT = 84;
+const REEL_CENTER_Y = 524;
+const REEL_SPACING = 100;
+const PACK_RADIUS = 38;
+const HUB_RADIUS = 22;
+const SPINDLE_RADIUS = 8;
 
 const glyphs = gunzipSync(Buffer.from(TERMINUS_GLYPHS_GZIP_BASE64, "base64"));
 
@@ -44,11 +93,12 @@ class Canvas {
     }
   }
 
-  /** A rectangle with its corners rounded to `radius`. */
+  /** A rectangle with its corners rounded to `radius`; a radius larger than half the width or height is held to that half, and a negative one to 0. */
   roundRect(x: number, y: number, width: number, height: number, radius: number, color: number): void {
+    const corner = Math.max(0, Math.min(radius, width / 2, height / 2));
     for (let row = 0; row < height; row++) {
       const fromEdge = Math.min(row, height - 1 - row);
-      const inset = fromEdge >= radius ? 0 : Math.ceil(radius - Math.sqrt(radius ** 2 - (radius - fromEdge - 0.5) ** 2));
+      const inset = fromEdge >= corner ? 0 : Math.ceil(corner - Math.sqrt(corner ** 2 - (corner - fromEdge - 0.5) ** 2));
       this.rect(x + inset, y + row, width - 2 * inset, 1, color);
     }
   }
@@ -129,9 +179,9 @@ function encodePng(canvas: Canvas): Uint8Array {
 export function renderShareCard({ headline, subline }: { headline: string; subline: string }): Uint8Array {
   const canvas = new Canvas();
   canvas.rect(0, 0, CARD_WIDTH, CARD_HEIGHT, INK);
-  canvas.rect(16, 16, CARD_WIDTH - 32, CARD_HEIGHT - 32, PAPER);
-  canvas.rect(16, 16, CARD_WIDTH - 32, 56, TAPE);
-  canvas.rect(16, 72, CARD_WIDTH - 32, 8, INK);
+  canvas.rect(BORDER, BORDER, CARD_WIDTH - 2 * BORDER, CARD_HEIGHT - 2 * BORDER, PAPER);
+  canvas.rect(BORDER, BORDER, CARD_WIDTH - 2 * BORDER, BAND_HEIGHT, TAPE);
+  canvas.rect(BORDER, BORDER + BAND_HEIGHT, CARD_WIDTH - 2 * BORDER, RULE_HEIGHT, INK);
 
   const width = CARD_WIDTH - 2 * MARGIN;
   const headlineScale = scaleFor(headline, 4);
@@ -140,20 +190,22 @@ export function renderShareCard({ headline, subline }: { headline: string; subli
   const sublineText = fitted(subline, sublineScale, width);
   const centered = (text: string, scale: number) => Math.floor((CARD_WIDTH - [...text].length * GLYPH_WIDTH * scale) / 2);
 
-  canvas.text(headlineText, centered(headlineText, headlineScale), 150, headlineScale, INK);
-  canvas.text(sublineText, centered(sublineText, sublineScale), 150 + GLYPH_HEIGHT * headlineScale + 40, sublineScale, INK);
+  canvas.text(headlineText, centered(headlineText, headlineScale), HEADLINE_TOP, headlineScale, INK);
+  canvas.text(sublineText, centered(sublineText, sublineScale), HEADLINE_TOP + GLYPH_HEIGHT * headlineScale + HEADLINE_GAP, sublineScale, INK);
 
   // The cassette: a dark shell, a label with a tape stripe, and a window with the two reels.
-  const left = (CARD_WIDTH - 520) / 2;
-  canvas.roundRect(left, 392, 520, 200, 26, INK);
-  canvas.roundRect(left + 24, 408, 472, 58, 10, PAPER);
-  canvas.rect(left + 24, 456, 472, 10, TAPE);
-  canvas.rect(left + 24, 408, 14, 10, CORAL);
-  canvas.roundRect(left + 40, 482, 440, 84, 42, WINDOW);
-  for (const cx of [CARD_WIDTH / 2 - 100, CARD_WIDTH / 2 + 100]) {
-    canvas.disc(cx, 524, 38, TAPE_BROWN);
-    canvas.disc(cx, 524, 22, PAPER);
-    canvas.disc(cx, 524, 8, INK);
+  const shell = (CARD_WIDTH - SHELL_WIDTH) / 2;
+  const label = shell + LABEL_INSET;
+  const labelWidth = SHELL_WIDTH - 2 * LABEL_INSET;
+  canvas.roundRect(shell, SHELL_TOP, SHELL_WIDTH, SHELL_HEIGHT, SHELL_RADIUS, INK);
+  canvas.roundRect(label, LABEL_TOP, labelWidth, LABEL_HEIGHT, LABEL_RADIUS, PAPER);
+  canvas.rect(label, LABEL_TOP + LABEL_HEIGHT - STRIPE_HEIGHT, labelWidth, STRIPE_HEIGHT, TAPE);
+  canvas.rect(label, LABEL_TOP, TAB_WIDTH, STRIPE_HEIGHT, CORAL);
+  canvas.roundRect(shell + WINDOW_INSET, WINDOW_TOP, SHELL_WIDTH - 2 * WINDOW_INSET, WINDOW_HEIGHT, WINDOW_HEIGHT / 2, WINDOW);
+  for (const cx of [CARD_WIDTH / 2 - REEL_SPACING, CARD_WIDTH / 2 + REEL_SPACING]) {
+    canvas.disc(cx, REEL_CENTER_Y, PACK_RADIUS, TAPE_BROWN);
+    canvas.disc(cx, REEL_CENTER_Y, HUB_RADIUS, PAPER);
+    canvas.disc(cx, REEL_CENTER_Y, SPINDLE_RADIUS, INK);
   }
   return encodePng(canvas);
 }

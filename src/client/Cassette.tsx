@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactElement } from "react";
-import { Reels } from "./chrome.tsx";
+import { Deck } from "./chrome.tsx";
+import { classNames } from "./helpers.ts";
 import { PayFriend, type ClientId, type Payment } from "./PayFriend.tsx";
 
 /** One lyric line and the stretch of the song it is sung in; `locked` until the friend's repayments reach its 25% step. */
@@ -90,7 +91,7 @@ function Row({
   text: string;
   span: { startMs: number; endMs: number };
   /** Which part of the song this is, for how the line is drawn. */
-  kind?: "intro" | "hook" | "chorus";
+  kind?: Exclude<Section["kind"], "verse">;
   locked?: boolean;
   /** What a screen reader calls this row while it is locked. */
   lockedLabel?: string;
@@ -103,14 +104,14 @@ function Row({
   return (
     <button
       onClick={() => onPlay(span.startMs)}
-      className={["ode-line", kind !== undefined && `ode-line--${kind}`, fresh && "ode-unlock-line"].filter(Boolean).join(" ")}
+      className={classNames("ode-line", kind !== undefined && `ode-line--${kind}`, fresh && "ode-unlock-line")}
       aria-current={current}
       aria-label={locked ? lockedLabel : undefined}
       title={locked ? "Locked until the friends are paid back far enough" : undefined}
       data-locked={locked ? "" : undefined}
     >
       {label !== undefined && <span className="ode-tag">{label}</span>}
-      <span className={fresh ? "ode-line-text ode-unlock-text" : "ode-line-text"}>{text}</span>
+      <span className={classNames("ode-line-text", fresh && "ode-unlock-text")}>{text}</span>
     </button>
   );
 }
@@ -233,62 +234,53 @@ export function Cassette({ ode, onPaid, title = "Your Ode", quiet = false }: { o
         </p>
       )}
       {ode.release?.countdown != null && (
-        <p aria-label="Release date" className={ode.release.delayed ? "ode-countdown ode-countdown--delayed" : "ode-countdown"}>
+        <p aria-label="Release date" className={classNames("ode-countdown", ode.release.delayed && "ode-countdown--delayed")}>
           {ode.release.countdown}
         </p>
       )}
       {unlocked.length > 0 && (
         <div role="status" className="ode-banner ode-banner--unlock ode-unlock-banner">
           <svg viewBox="0 0 20 20" aria-hidden="true">
-            <path d="M6 9V6.5a4 4 0 017.7-1.5" fill="none" stroke="#000" strokeWidth="2.4" strokeLinecap="round" />
-            <rect x="3.5" y="9" width="13" height="9" rx="1.8" fill="#000" />
+            <path d="M6 9V6.5a4 4 0 017.7-1.5" fill="none" stroke="var(--black)" strokeWidth="2.4" strokeLinecap="round" />
+            <rect x="3.5" y="9" width="13" height="9" rx="1.8" fill="var(--black)" />
           </svg>
           <span>
             {unlocked[0]?.friend}: {unlocked.length === 1 ? `line ${(unlocked[0]?.line ?? 0) + 1}` : `lines ${unlocked.map((u) => u.line + 1).join(", ")}`} unlocked!
           </span>
         </div>
       )}
-      <div className="ode-deck" data-playing={playing ? "" : undefined}>
-        <div className="ode-deck-label">
-          <p className="ode-deck-trip">{ode.trip}</p>
-          <p className="ode-deck-side">A</p>
-        </div>
-        <div className="ode-deck-window">
-          <Reels progress={ode.durationMs > 0 ? now / ode.durationMs : 0} />
-        </div>
-        <div className="ode-deck-tray">
-          <audio
-            ref={audio}
-            controls
-            preload="metadata"
-            src={ode.audioUrl}
-            onPlay={() => {
-              setPlaying(true);
-              void lowpass()?.context.resume();
-              cancelAnimationFrame(frame.current);
-              follow();
-            }}
-            onPause={() => {
-              setPlaying(false);
-              stopFollowing();
-            }}
-            onEnded={() => {
-              setPlaying(false);
-              stopFollowing();
-            }}
-            onSeeked={muffle}
-            onTimeUpdate={(event) => {
-              const ms = event.currentTarget.currentTime * 1000;
-              setNow(ms);
-              // The unlock plays the lines it unlocked and stops, instead of running on into locked ones.
-              if (stopAtMs.current !== null && ms >= stopAtMs.current) {
-                stopAtMs.current = null;
-                event.currentTarget.pause();
-              }
-            }}
-          />
-        </div>
-      </div>
+      <Deck label={ode.trip} progress={ode.durationMs > 0 ? now / ode.durationMs : 0} playing={playing}>
+        <audio
+          ref={audio}
+          controls
+          preload="metadata"
+          src={ode.audioUrl}
+          onPlay={() => {
+            setPlaying(true);
+            void lowpass()?.context.resume();
+            cancelAnimationFrame(frame.current);
+            follow();
+          }}
+          onPause={() => {
+            setPlaying(false);
+            stopFollowing();
+          }}
+          onEnded={() => {
+            setPlaying(false);
+            stopFollowing();
+          }}
+          onSeeked={muffle}
+          onTimeUpdate={(event) => {
+            const ms = event.currentTarget.currentTime * 1000;
+            setNow(ms);
+            // The unlock plays the lines it unlocked and stops, instead of running on into locked ones.
+            if (stopAtMs.current !== null && ms >= stopAtMs.current) {
+              stopAtMs.current = null;
+              event.currentTarget.pause();
+            }
+          }}
+        />
+      </Deck>
       <div className="ode-tracks">
         {ode.sections.map((section, index) => {
           const key = `${index}:${section.kind}`;
