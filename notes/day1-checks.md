@@ -75,10 +75,14 @@ Hosted app: `https://ode-nluc.onrender.com` (`/api/health` answers 200). It is n
 | `PAYPAL_WEBHOOK_ID` in the local `.env` | **Wrong**: it holds a URL, not the webhook's 17-character ID. The hosted value could not be read. If it is the same, the app rejects every real webhook (the verify call is malformed) |
 | Real capture (non-simulated) | Not driven: an order needs the payer's approval in a PayPal sandbox login |
 
-**Result: webhook delivery NO (not proven).** The subscription is now correct and PayPal accepted a simulated event, but no real signed delivery was seen arriving or verifying.
+**Result: webhook delivery YES (verified 2026-11-12, 14:12 UTC).**
 
-**Decision:** keep the ticket's fallback: the capture response alone unlocks (it already does, #27). The webhook is a second, best-effort confirmation and is **not** relied on in the demo until the payer does the steps below. Limitations: the capture response is the only confirmed unlock path; the verified webhook is untested end to end.
+| Check | Result |
+|---|---|
+| `PAYPAL_WEBHOOK_ID` | Fixed on Render and in the local `.env`: it is now the webhook's ID (`node --env-file=.env scripts/webhook-check.ts` says "Ready") |
+| `FRIEND_PAYPAL_ACCOUNTS` | Was unset on Render, so paying a friend answered 422 "No PayPal account is set up to pay Tharun"; set to the three sandbox friend accounts, then the payment worked |
+| Real capture | On the hosted page, an Own Ode made from `seed/notes.txt`; paid Tharun $50 with the payer's sandbox login: capture 200, $50.00 of $97.50 repaid, 2 lines unlocked |
+| Delivery | PayPal dashboard, Webhook Events: `PAYMENT.CAPTURE.COMPLETED`, event `WH-8G890814VH818520Y-6WK4613398668244R`, "Payment completed for $ 50.0 USD", resource `3B231164JJ520190P`, status **Success** (a 200 from `/api/payments/webhook`) |
 
-**What the payer must do (needs the Render dashboard or a PayPal sandbox login)**
-1. On the hosted web service (`ode`), set `PAYPAL_WEBHOOK_ID` to the ID of the sandbox webhook (PayPal dashboard, the app, Webhooks; the ID ends `610E`), not its URL; also set it in the local `.env`. Then redeploy or restart.
-2. Make one real sandbox payment on the hosted page with the payer's sandbox login. Then in the dashboard (Webhooks events) check the `PAYMENT.CAPTURE.COMPLETED` delivery shows 200, and in the Render logs a `POST /api/payments/webhook` 200. If it does, change the result above to yes.
+**Decision:** the webhook arrives and passes verification on the hosted app, so the unlock can be confirmed by either the capture response or the webhook (#27). No limitation to note. The hosted Render logs were not read (the service is not in the account the Render tools can see); the dashboard's Success status is the evidence.
+
