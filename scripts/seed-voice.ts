@@ -1,6 +1,6 @@
 // One-off: convert the Seeded Ode's stored audio into the payer's cloned voice and replace it (ADR 0002, #35).
 // Needs DATABASE_URL, ELEVENLABS_API_KEY and ELEVENLABS_VOICE_ID, and ffmpeg on the PATH (or FFMPEG_PATH).
-// Run it once, with `npm run seed:voice`; see docs/agents/run.md. Nothing is printed of the keys.
+// Run it once, with `npm run seed:voice`; see docs/agents/seed-voice.md. Nothing is printed of the keys.
 import pg from "pg";
 import { readEnv } from "../src/ops/env.ts";
 import { createElevenVoice } from "../src/server/eleven-voice.ts";

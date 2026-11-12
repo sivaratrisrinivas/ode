@@ -12,19 +12,17 @@
 // drop", and moving the fake clock past it (dev-fake's /dev/clock/advance-days) turns it into "Delayed" with the chorus locked.
 // The voice label (#35) is checked inside the judges' section: the Seeded Ode is unlabelled until dev-fake's /dev/seed-voice runs
 // the one-off conversion, then its panes read "in my voice", while a judge's own Ode never does.
+// At 390 px it also checks that the payer's page, a friend's page and the share page do not scroll sideways, that no lyric line or
+// inside joke is cut off, and that the repaid meter reads 51% after $50 of $97.50. Judges' Own Odes are checked in their own section.
 // See docs/agents/run.md. Usage: node scripts/drive-fake.mjs [screenshot.png]
 import assert from "node:assert/strict";
 import { writeFile } from "node:fs/promises";
-// PLAYWRIGHT_CORE overrides where playwright-core is imported from (it is not in node_modules).
-const { chromium } = await import(process.env.PLAYWRIGHT_CORE ?? "/home/srinivas/.bun/install/cache/playwright-core@1.63.0@@@1/index.mjs");
+import { launchBrowser } from "./browser.mjs";
 
 const port = process.env.PORT ?? "3000";
 const screenshot = process.argv[2] ?? "unlock.png";
 
-const browser = await chromium.launch({
-  executablePath: `${process.env.HOME}/.cache/ms-playwright/chromium-1243/chrome-linux64/chrome`,
-  args: ["--autoplay-policy=no-user-gesture-required"],
-});
+const browser = await launchBrowser(["--autoplay-policy=no-user-gesture-required"]);
 const context = await browser.newContext({ viewport: { width: 900, height: 1400 } });
 const page = await context.newPage();
 // The fake Ode's audio is 256 junk bytes, so nothing can be heard; record each play() request and where it started.

@@ -36,7 +36,7 @@ Without `RENDER_API_KEY` and `ODE_WORKFLOW_SLUG`, and off Render, the web servic
 
 Only the Seeded Ode is sung in the payer's cloned voice ([ADR 0002](docs/adr/0002-cloned-voice-only-on-seeded-ode.md)); every other Ode keeps Eleven Music's vocals. A one-off command converts it: ElevenLabs stem separation (`two_stems_v1`) into vocals and music, speech-to-speech (`eleven_multilingual_sts_v2`) of the vocals into the voice in `ELEVENLABS_VOICE_ID`, and an ffmpeg remix at 128 kbps, which replaces the stored audio. The Ode's line windows are not touched, so the command refuses to store a remix whose length is more than 250 ms from the original's (`MAX_LENGTH_CHANGE_MS` in `src/server/voice-conversion.ts`). The cassette page then says "in my voice" under the Seeded Ode's title; if the clone is not recognised, change that one string in `src/server/voice.ts` to "a voice like mine".
 
-Run it once, from a machine with Node 24 and `ffmpeg`, after the Seeded Ode is made on the hosted site (steps in [`docs/agents/run.md`](docs/agents/run.md)):
+Run it once, from a machine with Node 24 and `ffmpeg`, after the Seeded Ode is made on the hosted site (steps in [`docs/agents/seed-voice.md`](docs/agents/seed-voice.md)):
 
 ```sh
 npm run seed:voice

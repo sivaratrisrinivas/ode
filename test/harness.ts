@@ -1,5 +1,6 @@
 import { PGlite } from "@electric-sql/pglite";
 import { createApi } from "../src/server/app.ts";
+import type { ConfigReadiness } from "../src/server/config-readiness.ts";
 import { friendAccounts } from "../src/server/friend-accounts.ts";
 import { createOdeJob } from "../src/server/ode-job.ts";
 import type { Claude, ElevenMusic, Sql } from "../src/server/ports.ts";
@@ -30,7 +31,7 @@ export const MAKE_ODE = { releaseDate: "2027-01-01" };
  * The test seam: the HTTP API, with in-process Postgres and fakes at the four ports and at the Workflow.
  * The fake Workflow runs the Render task's job with its own database stores, as a separate process would.
  */
-export async function createHarness(canned: { claude?: Claude; music?: ElevenMusic } = {}) {
+export async function createHarness({ config, ...canned }: { claude?: Claude; music?: ElevenMusic; config?: ConfigReadiness } = {}) {
   const sql = await freshDatabase();
   const ports = { ...fakePorts(), ...canned };
   const workflow = fakeWorkflow(createOdeJob({ sql, claude: ports.claude, music: ports.music }));
@@ -69,7 +70,7 @@ export async function createHarness(canned: { claude?: Claude; music?: ElevenMus
 
   /** A web service process: a new API over the same database and Workflow, as after a deploy or a crash. */
   function webService() {
-    const api = createApi({ sql, ports, workflow, friendAccounts: friendAccounts(seedFriendAccounts), paypalClientId: undefined });
+    const api = createApi({ sql, ports, workflow, friendAccounts: friendAccounts(seedFriendAccounts), paypalClientId: undefined, ...(config ? { config } : {}) });
     return {
       ...browserOn(api, cookies),
       /** Another person's browser on this same web service: its own cookies, so its own visitor. */

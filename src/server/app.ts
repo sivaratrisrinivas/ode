@@ -1,5 +1,6 @@
 import { Hono, type Context } from "hono";
 import { audioResponse } from "./audio-response.ts";
+import type { ConfigReadiness } from "./config-readiness.ts";
 import { pairedInOrder, type FriendAccounts } from "./friend-accounts.ts";
 import { eventStream, friendViewJson, friendViewPath, linkOwner, lockedSections, type UnknownLink } from "./friend-view.ts";
 import { parseRowEdit, rowWarnings, type LedgerRow } from "./ledger.ts";
@@ -234,6 +235,7 @@ export function createApi({
   workflow,
   friendAccounts,
   paypalClientId,
+  config,
   indexHtml = BARE_SHELL,
 }: {
   sql: Sql;
@@ -241,6 +243,8 @@ export function createApi({
   workflow: OdeWorkflow;
   friendAccounts: FriendAccounts;
   paypalClientId: string | undefined;
+  /** Which settings the service has; `/api/health` reports it so a deploy's settings can be checked without the logs. */
+  config?: ConfigReadiness;
   indexHtml?: string;
 }): Hono<VisitorEnv> {
   const api = new Hono<VisitorEnv>();
@@ -265,7 +269,7 @@ export function createApi({
     return scopeFor((await judges.isJudge(visitor)) ? visitor : SEEDED);
   }
 
-  api.get("/api/health", (c) => c.json({ ok: true, now: ports.clock.now().toISOString() }));
+  api.get("/api/health", (c) => c.json({ ok: true, now: ports.clock.now().toISOString(), ...(config ? { config } : {}) }));
 
   api.get("/api/judge-ode", async (c) => c.json({ mine: await judges.isJudge(c.get("visitor")) }));
 
