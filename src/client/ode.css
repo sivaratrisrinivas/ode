@@ -93,7 +93,12 @@ small { color: var(--muted); }
 a.ode-brand { text-decoration: none; width: fit-content; }
 /* Inside the split screen the page above already carries the name, so a pane starts with its content. */
 [data-pane] .ode-brand { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
-[data-pane] .ode-page { padding-top: 8px; }
+[data-pane] .ode-page { padding-top: 8px; padding-bottom: 56px; }
+/* A pane is as tall as its page and never scrolls by itself (the frame around it follows its height), so nothing in it
+   may be sized from the frame's height: that would feed back. */
+[data-pane] { overflow: hidden; }
+[data-pane] body { min-height: 0; }
+[data-pane] .ode-deck-stage, [data-pane] .ode-cassette:has(.ode-repay) .ode-deck-stage { height: clamp(210px, 46vw, 290px); }
 
 .ode-title { margin-top: 18px; }
 .ode-sub { color: var(--muted); font-size: 0.9rem; margin: 6px 0 0; }
@@ -196,7 +201,16 @@ button.primary:hover:not(:disabled) { background: var(--ink-soft); }
 
 /* ---------- The cassette page ---------- */
 
-.ode-cassette { display: grid; gap: var(--gap); }
+.ode-cassette, .ode-cassette-main { display: grid; gap: var(--gap); }
+.ode-cassette-main { min-width: 0; }
+/* A wide screen is used as one: the cassette and its controls on the left, the lyrics beside them, both on the first screen. */
+@media (min-width: 900px) {
+  .ode-page:has(.ode-cassette) { max-width: 1120px; }
+  .ode-page:has(.ode-cassette) .ode-setup, .ode-page:has(.ode-cassette) > header { max-width: 620px; }
+  .ode-cassette { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: clamp(48px, 7vw, 96px); align-items: start; }
+  .ode-cassette-main { position: sticky; top: 24px; }
+  .ode-tracks { padding-top: 32px; }
+}
 
 /* The stage holds the 3D cassette, or the flat one while it loads and where it cannot be drawn: one height for both.
    It is most of the first screen, and empty around the object on purpose. */
@@ -285,7 +299,9 @@ button.primary:hover:not(:disabled) { background: var(--ink-soft); }
 .ode-cassette:has(.ode-repay) .ode-transport { background: transparent; border: var(--edge); color: var(--ink); }
 .ode-cassette:has(.ode-repay) .ode-transport:hover:not(:disabled) { background: var(--hair); }
 .ode-cassette:has(.ode-repay) .ode-deck-stage { height: clamp(220px, min(40vh, 70vw), 380px); }
-.ode-cassette:has(.ode-repay) { gap: clamp(28px, 5vw, 44px); }
+.ode-cassette:has(.ode-repay) .ode-cassette-main { gap: clamp(28px, 5vw, 44px); }
+/* A friend who is fully repaid keeps a small orange mark by their name. */
+.ode-repay .ode-split-picker button[data-repaid]::after { content: ""; display: inline-block; width: 6px; height: 6px; margin-left: 7px; border-radius: 50%; background: var(--ok); vertical-align: middle; }
 
 .ode-pay { display: grid; gap: 10px; margin: 0 0 14px; }
 .ode-pay-line { margin: 0; color: var(--muted); font-size: 0.9rem; font-variant-numeric: tabular-nums; }
@@ -330,18 +346,25 @@ button.primary:hover:not(:disabled) { background: var(--ink-soft); }
 .ode-tagline { margin: 0; font-family: var(--display); font-size: clamp(1.9rem, 4.6vw, 3.2rem); font-weight: 650; letter-spacing: -0.035em; line-height: 1.04; }
 .ode-split-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; }
 .ode-split-tools button { border-color: transparent; color: var(--ink-soft); font-size: 0.95rem; padding: 8px 14px; }
+/* The menu: one quiet word that opens the two things a visitor rarely needs. */
+.ode-menu { position: relative; }
+.ode-menu > summary { list-style: none; cursor: pointer; padding: 8px 14px; border-radius: 10px; color: var(--ink-soft); font-size: 0.95rem; font-weight: 550; }
+.ode-menu > summary::-webkit-details-marker { display: none; }
+.ode-menu > summary:hover, .ode-menu[open] > summary { background: var(--hair); }
+.ode-menu-list { position: absolute; right: 0; top: calc(100% + 6px); z-index: 2; display: grid; min-width: 13rem; padding: 6px; border: var(--edge); border-radius: 12px; background: var(--card); box-shadow: var(--lift); }
+.ode-menu-list button { text-align: left; white-space: nowrap; }
 .ode-split-tag { color: var(--muted); font-size: 0.9rem; padding-right: 8px; }
 .ode-split-pane { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
 .ode-split-caption { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; min-height: 34px; padding: 0 6px; font-size: 0.9rem; color: var(--muted); }
 .ode-split-picker { display: flex; flex-wrap: wrap; gap: 2px; margin-left: auto; }
 .ode-split-picker button { padding: 4px 14px; border-color: transparent; font-size: 0.9rem; color: var(--muted); }
 .ode-split-picker button[aria-pressed="true"], .ode-split-picker button[aria-pressed="true"]:hover { background: var(--paper); color: var(--ink); }
-.ode-split iframe { display: block; width: 100%; height: 88vh; border: 0; border-radius: 18px; background: var(--paper); }
+.ode-split iframe { display: block; width: 100%; height: 70vh; min-height: 420px; border: 0; border-radius: 18px; background: var(--paper); }
 .ode-split-empty { margin: 0; padding: 6px; color: var(--muted); }
 
 body:has(.ode-split) { background: var(--card); }
 /* Alone, the payer's side sits in a column of its own in the middle of the page. */
-.ode-split:not([data-both]) { max-width: 860px; margin: 0 auto; }
+.ode-split:not([data-both]) { max-width: 1240px; margin: 0 auto; }
 .ode-split-tools button[aria-pressed="true"] { color: var(--ink); }
 /* Alone, the headline is one line and the pane needs no caption: the page above the fold is the sentence, the cassette and one button. */
 .ode-split:not([data-both]) .ode-tagline { font-size: clamp(1.5rem, 3.6vw, 2.2rem); }
@@ -351,8 +374,6 @@ body:has(.ode-split) { background: var(--card); }
 @media (min-width: 800px) {
   .ode-split { padding: 28px 32px 32px; }
   .ode-split[data-both] { grid-template-columns: 1fr 1fr; }
-  .ode-split iframe { height: calc(100vh - 210px); min-height: 520px; }
-  .ode-split:not([data-both]) iframe { height: calc(100vh - 150px); }
 }
 
 @media (max-width: 520px) {

@@ -41,6 +41,11 @@ await page.addInitScript(() => {
 const fakeNow = new Date((await (await fetch(`http://localhost:${port}/api/health`)).json()).now);
 // The payer repays one friend at a time: turn the controls to `name` before paying them.
 const turnTo = (view, name) => view.getByRole("button", { name, exact: true }).click();
+// "Make my own Ode", "Back to the Seeded Ode" and "Reset demo" are behind the landing page's "More": open it first.
+const openMore = async (view) => {
+  const closed = view.locator("details.ode-menu:not([open]) > summary");
+  if ((await closed.count()) > 0) await closed.click();
+};
 const dayIso = (offset) => new Date(fakeNow.getTime() + offset * 86_400_000).toISOString().slice(0, 10);
 
 try {
@@ -236,7 +241,8 @@ try {
     await turnTo(left, friendName);
     await left.getByLabel(new RegExp(`Pay ${friendName}`)).fill(amount);
     await left.getByRole("button", { name: `Pay ${friendName}` }).click();
-    await left.getByRole("button", { name: `${friendName} is fully repaid` }).waitFor();
+    // Fully repaid, the turn passes to the next friend still owed, so this friend's Pay button goes.
+    await left.getByRole("button", { name: `Pay ${friendName}` }).waitFor({ state: "detached" });
   }
   await turnTo(left, "Sahiti");
   await left.getByLabel(/Pay Sahiti/).fill("77.49");
@@ -327,6 +333,7 @@ try {
   console.log("visitor copies: paying in the second browser left the first at $97.50, and a reload keeps each copy");
 
   // "Reset demo" starts this browser's copy from zero and leaves the other browser's copy alone.
+  await openMore(page);
   await page.getByRole("button", { name: "Reset demo" }).click();
   const resetAt = Date.now();
   await repaid(page.frameLocator('iframe[title="Friend view"]'), 0);
@@ -357,7 +364,8 @@ try {
   const judgeLeft = judge.frameLocator('iframe[title="Payer"]');
   const judgeRight = judge.frameLocator('iframe[title="Friend view"]');
   await judgeLeft.getByText("Your Ode").waitFor({ timeout: 30_000 });
-  assert.equal(await judge.getByRole("button", { name: "Back to the Seeded Ode" }).count(), 0, "a visitor starts on the Seeded Ode, not on their own");
+  assert.equal(await judge.getByRole("button", { name: "Back to the Seeded Ode", includeHidden: true }).count(), 0, "a visitor starts on the Seeded Ode, not on their own");
+  await openMore(judge);
   await judge.getByRole("button", { name: "Make my own Ode" }).click();
   await judge.getByText("Your own Ode").waitFor();
   await judgeLeft.getByLabel("Your trip notes").fill(goaNotes);
@@ -421,8 +429,9 @@ try {
   assert.equal(await voiceLabel(judgeRight).count(), 0, "a judge's friend pane is labelled in the payer's voice");
 
   // Back to the Seeded Ode: the judge's own Ode is forgotten, and the Seeded Ode they return to carries the label.
+  await openMore(judge);
   await judge.getByRole("button", { name: "Back to the Seeded Ode" }).click();
-  await judge.getByRole("button", { name: "Make my own Ode" }).waitFor();
+  await judge.getByRole("button", { name: "Make my own Ode", includeHidden: true }).waitFor({ state: "attached" });
   await judge.getByRole("button", { name: "Tharun" }).waitFor({ timeout: 15_000 });
   await voiceLabel(judgeLeft).waitFor({ timeout: 15_000 });
   console.log("own Ode: Back to the Seeded Ode returned the judge to Tharun, Vikram and Sahiti, with the voice label; their own Ode had none");
@@ -441,11 +450,12 @@ try {
     await call("POST", "/api/ode", { releaseDate: releaseOn });
     await maker.close();
   }
+  await openMore(judge);
   await judge.getByRole("button", { name: "Make my own Ode" }).click();
   const capNotice = judge.getByRole("alert").filter({ hasText: "new Odes have all been made" });
   await capNotice.waitFor({ timeout: 15_000 });
   console.log(`own Ode: the sixth new Ode of the day was told: "${await capNotice.innerText()}"`);
-  assert.equal(await judge.getByRole("button", { name: "Back to the Seeded Ode" }).count(), 0, "the judge is on their own Ode past the cap");
+  assert.equal(await judge.getByRole("button", { name: "Back to the Seeded Ode", includeHidden: true }).count(), 0, "the judge is on their own Ode past the cap");
   await judge.getByRole("button", { name: "Tharun" }).waitFor();
   await judgeContext.close();
 } finally {
